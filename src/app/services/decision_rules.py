@@ -1,22 +1,32 @@
+from typing import Literal
+
 from app.services.normalization import normalize, tokens
 from app.types.decision import CandidateDecision
 from app.types.entity import Entity
 from app.types.observation import Observation
 
 MIN_ANCHORED_NAME_TOKENS = 2
+GuardName = Literal["email", "org_id"]
 
 
-def violates_guards(*, observation: Observation, org_id: str | None, candidate: Entity) -> bool:
+def guard_violation(
+    *, observation: Observation, org_id: str | None, candidate: Entity
+) -> GuardName | None:
     candidate_emails = {normalize(email) for email in candidate.emails}
     email_conflict = (
         observation.email is not None
         and bool(candidate_emails)
         and normalize(observation.email) not in candidate_emails
     )
-    org_conflict = (
-        org_id is not None and candidate.org_id is not None and org_id != candidate.org_id
-    )
-    return email_conflict or org_conflict
+    if email_conflict:
+        return "email"
+    if org_id is not None and candidate.org_id is not None and org_id != candidate.org_id:
+        return "org_id"
+    return None
+
+
+def violates_guards(*, observation: Observation, org_id: str | None, candidate: Entity) -> bool:
+    return guard_violation(observation=observation, org_id=org_id, candidate=candidate) is not None
 
 
 def accepts_match(

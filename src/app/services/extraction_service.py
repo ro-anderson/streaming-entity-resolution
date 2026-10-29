@@ -63,6 +63,7 @@ class ExtractionService:
                     description=entity.description,
                     changed=entity.changed,
                     evidence=entity.evidence,
+                    sources=dict.fromkeys(surfaces, "text"),
                 )
             )
         return observations, result.participants

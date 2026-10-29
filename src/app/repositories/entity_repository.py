@@ -1,6 +1,6 @@
 from typing import Protocol
 
-from app.types.entity import Entity, EntityKind
+from app.types.entity import Entity, EntityKind, SearchHit
 
 
 class EntityRepository(Protocol):
@@ -18,6 +18,6 @@ class EntityRepository(Protocol):
 
     def find_by_name(self, *, kind: EntityKind, name: str) -> list[Entity]: ...
 
-    def search(self, *, kind: EntityKind, name: str, size: int) -> list[Entity]: ...
+    def search(self, *, kind: EntityKind, name: str, size: int) -> list[SearchHit]: ...
 
     def all(self) -> list[Entity]: ...

@@ -1,6 +1,6 @@
 from app.services.normalization import is_bot, is_speaker_placeholder, normalize, tokens
 from app.types.decision import ReviewItem
-from app.types.observation import Observation
+from app.types.observation import Observation, SurfaceSource
 from app.types.signal import Contact, Signal
 
 UNNAMED_SPEAKER_REASON = "locutor sem nome"
@@ -34,6 +34,13 @@ def contacts_of(*, signal: Signal) -> list[Contact]:
     return [*contacts, *signal.participants]
 
 
+def sourced_contacts(*, signal: Signal) -> list[tuple[Contact, SurfaceSource]]:
+    author: list[tuple[Contact, SurfaceSource]] = (
+        [(signal.author, "author")] if signal.author else []
+    )
+    return [*author, *((contact, "participant") for contact in signal.participants)]
+
+
 def contact_key(*, contact: Contact) -> str:
     return (
         f"email:{normalize(contact.email)}" if contact.email else f"name:{normalize(contact.name)}"
@@ -53,13 +60,15 @@ def build_structured_observations(*, signal: Signal) -> tuple[list[Observation],
     names_by_key: dict[str, str] = {}
     emails_by_key: dict[str, str | None] = {}
     full_name_keys: dict[str, str] = {}
-    for contact in contacts_of(signal=signal):
+    sources_by_key: dict[str, dict[str, SurfaceSource]] = {}
+    for contact, source in sourced_contacts(signal=signal):
         if is_bot(contact):
             continue
         key = contact_key(contact=contact)
         surfaces_by_key.setdefault(key, [])
         if contact.name not in surfaces_by_key[key]:
             surfaces_by_key[key].append(contact.name)
+        sources_by_key.setdefault(key, {}).setdefault(contact.name, source)
         names_by_key.setdefault(key, contact.name)
         emails_by_key.setdefault(key, contact.email)
         if len(tokens(contact.name)) >= MIN_FULL_NAME_TOKENS:
@@ -75,6 +84,7 @@ def build_structured_observations(*, signal: Signal) -> tuple[list[Observation],
         surfaces_by_key.setdefault(key, [])
         if speaker not in surfaces_by_key[key]:
             surfaces_by_key[key].append(speaker)
+        sources_by_key.setdefault(key, {}).setdefault(speaker, "speaker")
         names_by_key.setdefault(key, speaker)
         emails_by_key.setdefault(key, None)
     observations = [
@@ -84,6 +94,7 @@ def build_structured_observations(*, signal: Signal) -> tuple[list[Observation],
             surfaces=surfaces,
             email=emails_by_key[key],
             evidence=evidence_for(signal=signal, surfaces=surfaces),
+            sources=sources_by_key[key],
         )
         for key, surfaces in surfaces_by_key.items()
     ]

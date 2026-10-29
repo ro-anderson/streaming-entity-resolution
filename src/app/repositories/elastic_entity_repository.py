@@ -4,7 +4,7 @@ from elasticsearch import Elasticsearch
 
 from app.repositories.index_mappings import INDEX_MAPPINGS, INDEX_SETTINGS
 from app.services.normalization import normalize
-from app.types.entity import Entity, EntityKind
+from app.types.entity import Entity, EntityKind, SearchHit
 
 KIND_SUFFIXES: dict[EntityKind, str] = {"PERSON": "person", "ORGANIZATION": "organization"}
 ALL_SIZE = 1000
@@ -78,7 +78,7 @@ class ElasticEntityRepository:
             size=ALL_SIZE,
         )
 
-    def search(self, *, kind: EntityKind, name: str, size: int) -> list[Entity]:
+    def search(self, *, kind: EntityKind, name: str, size: int) -> list[SearchHit]:
         query: dict[str, object] = {
             "bool": {
                 "should": [
@@ -99,7 +99,11 @@ class ElasticEntityRepository:
                 "minimum_should_match": 1,
             }
         }
-        return self.query(indices=[self.index_for(kind)], query=query, size=size)
+        response = self.client.search(index=[self.index_for(kind)], query=query, size=size)
+        return [
+            SearchHit(entity=self.to_entity(hit["_source"]), score=float(hit["_score"] or 0.0))
+            for hit in response["hits"]["hits"]
+        ]
 
     def all(self) -> list[Entity]:
         return self.query(

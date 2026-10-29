@@ -4,7 +4,7 @@ import pytest
 from elasticsearch import Elasticsearch
 
 from app.repositories.elastic_entity_repository import ElasticEntityRepository
-from app.types.entity import Entity, EntityKind, Mention
+from app.types.entity import Entity, EntityKind, Mention, SearchHit
 
 ELASTIC_URL = "http://localhost:9200"
 TEST_PREFIX = "test_"
@@ -48,8 +48,8 @@ def make_entity(
     return entity
 
 
-def names(entities: list[Entity]) -> list[str]:
-    return [entity.name for entity in entities]
+def names(hits: list[SearchHit]) -> list[str]:
+    return [hit.entity.name for hit in hits]
 
 
 def test_next_id_is_global_and_sequential(repository: ElasticEntityRepository) -> None:

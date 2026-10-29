@@ -1,6 +1,10 @@
+from typing import Literal
+
 from pydantic import BaseModel
 
 from app.types.entity import EntityKind
+
+SurfaceSource = Literal["author", "participant", "speaker", "text"]
 
 
 class ExtractedEntity(BaseModel):
@@ -39,3 +43,4 @@ class Observation(BaseModel):
     description: str = ""
     changed: bool = False
     evidence: str = ""
+    sources: dict[str, SurfaceSource] = {}

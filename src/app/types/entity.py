@@ -29,6 +29,11 @@ class Entity(BaseModel):
     org_id: str | None = None
 
 
+class SearchHit(BaseModel):
+    entity: Entity
+    score: float
+
+
 class EntityExport(BaseModel):
     id: str
     kind: EntityKind

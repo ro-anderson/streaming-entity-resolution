@@ -1,4 +1,10 @@
-from app.services.decision_rules import accepts_match, choose_name, has_anchor, violates_guards
+from app.services.decision_rules import (
+    accepts_match,
+    choose_name,
+    guard_violation,
+    has_anchor,
+    violates_guards,
+)
 from app.types.decision import CandidateDecision
 from app.types.entity import Entity
 from app.types.observation import Observation
@@ -121,3 +127,23 @@ def test_choose_name_never_downgrades() -> None:
 
 def test_choose_name_requires_token_order() -> None:
     assert choose_name(current="Prates Joana", incoming="Joana Prates Silva") == "Prates Joana"
+
+
+def test_guard_violation_names_the_email_guard() -> None:
+    observation = person(name="Pedro Almeida", email="pedro.almeida@caravela.com.br")
+    target = candidate(emails=["pedro.nogueira@caravela.io"], org_id="e_010")
+    assert guard_violation(observation=observation, org_id="e_020", candidate=target) == "email"
+
+
+def test_guard_violation_names_the_org_guard() -> None:
+    target = candidate(org_id="e_010")
+    assert guard_violation(
+        observation=person(name="Fernanda"), org_id="e_020", candidate=target
+    ) == ("org_id")
+
+
+def test_guard_violation_is_none_when_compatible() -> None:
+    assert (
+        guard_violation(observation=person(name="Fernanda"), org_id=None, candidate=candidate())
+        is None
+    )
