@@ -1,0 +1,45 @@
+[project]
+name = "streaming-entity-resolution"
+version = "0.1.0"
+description = "Streaming entity resolution of people and organizations from chat and meeting signals"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "elasticsearch>=8.15,<9",
+    "openai>=1.60",
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+]
+
+[build-system]
+requires = ["uv_build>=0.9,<1"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "app"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF", "ANN"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+disallow_any_explicit = true
+plugins = ["pydantic.mypy"]
+mypy_path = "src"
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "ruff>=0.8",
+]
