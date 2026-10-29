@@ -6,6 +6,7 @@ from app.services.normalization import (
     is_personal_domain,
     is_speaker_placeholder,
     normalize,
+    strip_leading_article,
     tokens,
 )
 from app.types.signal import Contact, Signal
@@ -67,3 +68,15 @@ def test_find_original_span_returns_none_when_absent() -> None:
 def test_signals_file_parses_into_57_signals() -> None:
     lines = get_settings().signals_path.read_text(encoding="utf-8").splitlines()
     assert len([Signal.model_validate_json(line) for line in lines]) == 57
+
+
+def test_strip_leading_article_removes_portuguese_articles() -> None:
+    assert strip_leading_article("O Carlos") == "Carlos"
+    assert strip_leading_article("a Lume") == "Lume"
+    assert strip_leading_article("os Pedros") == "Pedros"
+
+
+def test_strip_leading_article_keeps_names_starting_with_article_letters() -> None:
+    assert strip_leading_article("Ana Lima") == "Ana Lima"
+    assert strip_leading_article("Otávio") == "Otávio"
+    assert strip_leading_article("O") == "O"

@@ -21,6 +21,7 @@ PERSONAL_DOMAINS = frozenset(
 BOT_MARKERS = ("notes", "read.ai", "bot", "notetaker")
 SPEAKER_PLACEHOLDER = re.compile(r"^speaker \d+$")
 TOKEN_SPLIT = re.compile(r"[^0-9a-z]+")
+LEADING_ARTICLE = re.compile(r"^(?:o|a|os|as)\s+(?=\S)", re.IGNORECASE)
 
 
 def fold(text: str) -> str:
@@ -34,6 +35,10 @@ def normalize(text: str) -> str:
 
 def tokens(text: str) -> list[str]:
     return [token for token in TOKEN_SPLIT.split(normalize(text)) if token]
+
+
+def strip_leading_article(text: str) -> str:
+    return LEADING_ARTICLE.sub("", text.strip(), count=1)
 
 
 def domain_of(email: str) -> str:

@@ -138,6 +138,12 @@ A missing run output returns `404` as `application/problem+json` with code `RUN_
 - **Domain resolves organizations, not people.** For a person, the email domain only sets
   the organization. When the LLM links a participant's domain to an organization, the
   domain is stored on it, and the next email from that domain resolves without the LLM.
+- **An ambiguous decision about someone with an email creates a new entity.** The email is
+  a strong identity of its own, and splitting is the cheap error: "Rafael Teixeira", author
+  with an email, no longer goes to review just because a nickname-only "Rafa" exists.
+  Without an email, ambiguous still goes to review.
+- **Aliases drop a leading article** ("O Carlos" is stored as the alias "Carlos"); the
+  mention keeps the exact surface from the signal.
 - **Anchor rule:** a new person needs an email, a name with two or more tokens, an
   organization or a role. A bare first name with nothing else goes to review.
 - **Name upgrade:** the name changes only when each token of the current name is a prefix
@@ -162,8 +168,13 @@ A missing run output returns `404` as `application/problem+json` with code `RUN_
 - **Lexical search first.** Freshly created entities have one-line descriptions, so
   embeddings would add little at first. kNN comes next; `more_like_this` was discarded
   because names are too short for term statistics.
-- **Writes use `refresh=wait_for`,** so a document saved earlier in the same signal is
-  visible to the next search.
+- **Writes use `refresh=true`,** so a document saved earlier in the same signal is visible
+  to the next search (an organization created in a signal must be found when a person of
+  that signal is resolved). `wait_for` gives the same guarantee but blocks each write until
+  the next scheduled refresh (1 s by default); forcing the refresh costs nothing at this
+  volume. In production, with many writes, forcing a refresh per document would be too
+  expensive: refresh once per batch, or keep an in-memory cache of the entities touched in
+  the current signal and search it alongside the index.
 - **Models:** extraction and decision models are configured separately
   (`EXTRACTION_MODEL`, `DECISION_MODEL`, default `gpt-5-mini`) with low reasoning effort.
   The GPT-5 family does not take `temperature`, so reruns are made deterministic by the

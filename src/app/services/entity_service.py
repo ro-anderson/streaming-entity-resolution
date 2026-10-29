@@ -1,6 +1,6 @@
 from app.repositories.entity_repository import EntityRepository
 from app.services.decision_rules import choose_name
-from app.services.normalization import normalize
+from app.services.normalization import normalize, strip_leading_article
 from app.types.entity import Entity, Mention, Revision
 from app.types.observation import Observation
 from app.types.signal import Tenant
@@ -10,10 +10,11 @@ def unique_by_key(*, values: list[str], excluded: set[str]) -> list[str]:
     seen = set(excluded)
     result: list[str] = []
     for value in values:
-        key = normalize(value)
+        alias = strip_leading_article(value)
+        key = normalize(alias)
         if key and key not in seen:
             seen.add(key)
-            result.append(value)
+            result.append(alias)
     return result
 
 

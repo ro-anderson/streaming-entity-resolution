@@ -5,7 +5,12 @@ from app.clients.llm_client import LLMClient
 from app.repositories.entity_repository import EntityRepository
 from app.repositories.review_repository import ReviewRepository
 from app.repositories.trace_recorder import TraceRecorder
-from app.services.decision_rules import accepts_match, guard_violation, has_anchor
+from app.services.decision_rules import (
+    accepts_match,
+    creates_on_ambiguity,
+    guard_violation,
+    has_anchor,
+)
 from app.services.entity_service import EntityService
 from app.services.normalization import domain_of, is_personal_domain
 from app.services.observation_builder import render_signal
@@ -116,7 +121,10 @@ class ResolutionService:
                 after=updated,
             )
             return updated
-        if decision.decision == "new":
+        ambiguous_with_identity = decision.decision == "ambiguous" and creates_on_ambiguity(
+            observation=observation
+        )
+        if decision.decision == "new" or ambiguous_with_identity:
             return self.create_or_review(
                 signal=signal,
                 observation=observation,

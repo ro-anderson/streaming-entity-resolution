@@ -14,6 +14,7 @@ Items left out of the first version, and why.
 | Manual review with persistence | The UI is read-only in v1. Elasticsearch is recreated on every run, so manual decisions need their own file (for example `data/manual_decisions.json`) that is reapplied after the reset. |
 | Live run streamed to the UI (SSE) | The UI replays a recorded run, which is instant and does not depend on the network or the LLM during a demo. |
 | Threshold calibration on real boundary cases | See below. The 0.85 cut sits between the confidence values the model actually emits; `make check` covers only the critical invariants. |
+| Better descriptions from participant notes | Some come out as "author of the message" instead of the person's role. Fixing it changes the extraction prompt, which invalidates the cache and costs a full run. |
 | Unit tests for services beyond normalization and decision rules | Added after the first end-to-end run, guided by its result. |
 | Full mypy strict in CI | It runs in `make lint` without blocking. |
 

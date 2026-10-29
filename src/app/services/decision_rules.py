@@ -50,6 +50,10 @@ def has_anchor(*, observation: Observation, org_id: str | None) -> bool:
     )
 
 
+def creates_on_ambiguity(*, observation: Observation) -> bool:
+    return observation.email is not None
+
+
 def is_prefix_expansion(*, current: list[str], incoming: list[str]) -> bool:
     position = 0
     for token in current:

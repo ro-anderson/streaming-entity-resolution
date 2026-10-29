@@ -52,7 +52,7 @@ class ElasticEntityRepository:
             index=self.index_for(entity.kind),
             id=entity.id,
             document=document,
-            refresh="wait_for",
+            refresh=True,
         )
 
     def find_by_email(self, *, email: str) -> Entity | None:

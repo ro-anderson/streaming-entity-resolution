@@ -1,6 +1,7 @@
 from app.services.decision_rules import (
     accepts_match,
     choose_name,
+    creates_on_ambiguity,
     guard_violation,
     has_anchor,
     violates_guards,
@@ -147,3 +148,12 @@ def test_guard_violation_is_none_when_compatible() -> None:
         guard_violation(observation=person(name="Fernanda"), org_id=None, candidate=candidate())
         is None
     )
+
+
+def test_ambiguous_observation_with_email_creates_entity() -> None:
+    observation = person(name="Rafael Teixeira", email="rafael@caravela.com.br")
+    assert creates_on_ambiguity(observation=observation)
+
+
+def test_ambiguous_observation_without_email_goes_to_review() -> None:
+    assert not creates_on_ambiguity(observation=person(name="Rafael Teixeira"))
