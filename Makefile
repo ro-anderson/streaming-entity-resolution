@@ -1,4 +1,4 @@
-.PHONY: up down install reset run run-no-cache check test lint help
+.PHONY: up down install reset run run-no-cache check api test lint help
 
 SHELL=/bin/bash
 
@@ -36,6 +36,10 @@ run-no-cache:
 check:
 	uv run python -m app.check
 
+## Serve the last run read-only on :8000
+api:
+	uv run fastapi dev src/app/api.py
+
 ## Run unit tests
 test:
 	uv run pytest tests/unit
@@ -56,6 +60,7 @@ help:
 	@echo "  make run           - Process every signal and export the JSON files"
 	@echo "  make run-no-cache  - Same as run, ignoring the LLM cache"
 	@echo "  make check         - Validate the critical invariants of the output"
+	@echo "  make api           - Serve the last run read-only on :8000"
 	@echo "  make test          - Run unit tests"
 	@echo "  make lint          - Lint, format check and type check"
 

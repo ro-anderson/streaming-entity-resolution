@@ -5,6 +5,7 @@ description = "Streaming entity resolution of people and organizations from chat
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "elasticsearch>=8.15,<9",
+    "fastapi[standard]>=0.162.0",
     "openai>=1.60",
     "pydantic>=2.10",
     "pydantic-settings>=2.7",
@@ -39,6 +40,7 @@ addopts = "-ra"
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
     "mypy>=1.13",
     "pytest>=8.3",
     "ruff>=0.8",

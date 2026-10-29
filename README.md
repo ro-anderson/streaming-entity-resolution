@@ -83,6 +83,24 @@ For each signal, in order:
      Everything else uncertain goes to `needs_review` without creating an entity.
 5. After the last signal, the repository is exported.
 
+## API
+
+A read-only API serves the last run to the UI, straight from `data/` and `out/`, so it
+works without Elasticsearch running:
+
+```sh
+make api   # http://localhost:8000/docs
+```
+
+| Route | Returns |
+| --- | --- |
+| `GET /api/signals` | the signals, in order |
+| `GET /api/trace` | one event per resolved observation: candidates, guards, LLM decision, outcome, entity before and after |
+| `GET /api/entities` | `out/entities.json` |
+| `GET /api/reviews` | `out/needs_review.json` |
+
+A missing run output returns `404` as `application/problem+json` with code `RUN_NOT_FOUND`.
+
 ## Output
 
 `out/entities.json`:
@@ -104,6 +122,8 @@ For each signal, in order:
   signal (text, title, author, participant or speaker).
 - `description`: what the entity is to the tenant company now.
 - `revisions`: one entry per signal that changed the name or the description.
+
+`out/trace.jsonl`: the decision trace, one JSON event per resolved observation.
 
 `out/needs_review.json`: the mentions that could not be attributed, with `signal_id`,
 `surface` and `reason`.
@@ -127,6 +147,18 @@ For each signal, in order:
 - **Revisions:** creation always writes one; an update writes one only when the name or
   the description changed. The seeded tenant organization has no revision, since it does
   not come from a signal.
+- **Match threshold of 0.85, applied to the LLM confidence, not to the search score.**
+  The Elasticsearch BM25 score is not normalized across queries: in the first run the top
+  candidate scored between 4.2 and 40.2 when the decision was a match, and between 2.7 and
+  29.1 when it was ambiguous, so no cut on it separates the two. It is only used to rank
+  candidates, and the chosen one was the first in 83 of 86 matches. The LLM confidence is
+  not continuous either: the model answered in a few round values (0.95 in 31 matches, 0.9
+  in 42, 0.85 in 3, 0.8 in 4, 0.7 to 0.75 in 3), so it behaves like categories. 0.85 cuts
+  between the "near certain" and "probably" groups. The three matches accepted exactly at
+  0.85 were correct; of the seven rejected below it, most look right on inspection, but
+  that is a handful of unlabeled cases and wrongly merging two people costs more than one
+  more review item, so the threshold stays conservative. How to recalibrate it on labeled
+  boundary cases is described in the [backlog](BACKLOG.md#threshold-calibration-on-real-boundary-cases).
 - **Lexical search first.** Freshly created entities have one-line descriptions, so
   embeddings would add little at first. kNN comes next; `more_like_this` was discarded
   because names are too short for term statistics.
