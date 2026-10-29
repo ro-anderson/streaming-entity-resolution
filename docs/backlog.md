@@ -10,6 +10,7 @@ Items left out of the first version, and why.
 | Native Elasticsearch RRF retriever | Depends on version and license; RRF in the client is easier to reason about. |
 | SNS, SQS FIFO, DynamoDB single table + CDC with LocalStack | The architecture is already visible in the producer/consumer abstractions; infrastructure can be plugged in later. |
 | Elasticsearch service container and integration tests in CI | v1 CI runs ruff and unit tests only. |
+| End-to-end UI tests (Playwright) over a recorded run | The UI logic is unit tested; a browser test needs a fixed run output committed as a fixture. |
 | Kibana | Debugging aid, not needed to produce the output. |
 | Manual review with persistence | The UI is read-only in v1. Elasticsearch is recreated on every run, so manual decisions need their own file (for example `data/manual_decisions.json`) that is reapplied after the reset. |
 | Live run streamed to the UI (SSE) | The UI replays a recorded run, which is instant and does not depend on the network or the LLM during a demo. |

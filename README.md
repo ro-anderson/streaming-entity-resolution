@@ -42,19 +42,8 @@ make ui                   # terminal 2: http://localhost:5173
 ```
 
 LLM responses are cached in `.cache/llm/`: a second `make run` is fast, free and identical.
-`make run-no-cache` ignores the cache. `make help` lists every target.
-
-### Tests
-
-```sh
-make test                 # unit tests
-make lint                 # ruff, format check, mypy (non-blocking)
-uv run pytest tests/integration          # needs `make up`
-cd frontend && pnpm install && pnpm test # UI logic
-```
-
-CI runs ruff, the unit tests, the OpenAPI contract check and the frontend lint, typecheck,
-tests and build on every pull request.
+`make run-no-cache` ignores the cache. `make help` lists every target. Tests are described
+in [Tests and CI](#tests-and-ci).
 
 ## Output
 
@@ -253,6 +242,37 @@ Interactive docs at `http://127.0.0.1:8000/docs`.
   candidates it considered. A report, not a work queue.
 - **Entities:** search, identity, how the description changed, where the entity appears,
   and a "protected homonym" note when a guard actually kept someone apart from it.
+
+## Tests and CI
+
+| Layer | Framework | What it covers | In CI |
+| --- | --- | --- | --- |
+| Backend unit (56) | [pytest](https://docs.pytest.org/) | normalization and surface trimming (18), decision rules: guards, threshold, anchor, name upgrade, canonical organization name (29), OpenAI client and disk cache with hand-written fakes (7), API routes with FastAPI's `TestClient` (2) | yes |
+| Backend integration (11) | pytest against a real Elasticsearch | the repository: mappings, exact lookups, fuzzy and prefix search, accent folding, kinds kept apart; skipped when Elasticsearch is not running | no |
+| Frontend unit (17) | [Vitest](https://vitest.dev/) | the pure logic: repository state at a signal, highlight segmentation (longest first, no overlap), default trace event | yes |
+| Invariants | `make check` on a real run | homonyms never merged, Expresso Norte and Nordeste apart, no email in two entities | no, needs an OpenAI key |
+| End to end | none yet | a browser test of the UI over a recorded run is in the [backlog](docs/backlog.md) | no |
+
+Unit tests come first where an error is expensive: normalization and the decision rules
+were written test first. They never call the LLM or Elasticsearch.
+
+Static checks: [ruff](https://docs.astral.sh/ruff/) (lint and format) and mypy strict
+(non-blocking for now) on the backend; ESLint with typed rules, Prettier and `tsc` on the
+frontend.
+
+```sh
+make test                                 # backend unit tests
+make lint                                 # ruff, format check, mypy (non-blocking)
+uv run pytest tests/integration           # needs `make up`
+cd frontend && pnpm install && pnpm test  # frontend unit tests
+make run && make check                    # invariants on a real run
+```
+
+[GitHub Actions](.github/workflows/ci.yaml) runs on every pull request and push to `main`:
+
+- **backend:** `uv sync --frozen`, ruff check, ruff format check, unit tests, and a check
+  that `openapi.json` matches the API (the UI types are generated from it).
+- **frontend:** `pnpm install --frozen-lockfile`, lint, typecheck, unit tests, build.
 
 ## Further reading
 
