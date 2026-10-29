@@ -98,8 +98,8 @@ export function EntitiesPage() {
         <div className="page-intro">
           <h1>Entidades</h1>
           <p>
-            Pessoas e organizações no repositório ao fim da execução, das mais mencionadas para as
-            menos. Use a busca para filtrar por nome, apelido ou e-mail.
+            Pessoas e organizações no repositório ao fim da execução, em ordem alfabética. Use a
+            busca para filtrar por nome, apelido ou e-mail.
           </p>
         </div>
         <div className="entity-toolbar">

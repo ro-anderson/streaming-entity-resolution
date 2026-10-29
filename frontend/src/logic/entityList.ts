@@ -21,10 +21,7 @@ export function listEntities<T extends EntityExport>({
   return entities
     .filter((entity) => kind === "all" || entity.kind === kind)
     .filter((entity) => matchesQuery({ entity, query }))
-    .sort(
-      (left, right) =>
-        right.mentions.length - left.mentions.length || left.name.localeCompare(right.name),
-    );
+    .sort((left, right) => left.name.localeCompare(right.name, "pt-BR", { sensitivity: "base" }));
 }
 
 export function kindCounts(entities: readonly EntityExport[]): Record<KindFilter, number> {

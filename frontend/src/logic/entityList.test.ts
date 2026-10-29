@@ -24,9 +24,22 @@ const luiz = entity({
 });
 const all = [translog, pedro, luiz];
 
-test("lists every kind sorted by mentions, then name", () => {
+test("lists every kind in alphabetical order", () => {
   const listed = listEntities({ entities: all, kind: "all", query: "" });
-  expect(listed.map((item) => item.id)).toEqual(["e_003", "e_005", "e_002"]);
+  expect(listed.map((item) => item.name)).toEqual(["Luiz Barreto", "Pedro Nogueira", "Translog"]);
+});
+
+test("sorts ignoring case and accents", () => {
+  const names = ["Rodobrás", "agencia Lume", "Álvaro", "Banco Aurora"].map((name, index) =>
+    entity({ id: `e_${String(index)}`, name }),
+  );
+  const listed = listEntities({ entities: names, kind: "all", query: "" });
+  expect(listed.map((item) => item.name)).toEqual([
+    "agencia Lume",
+    "Álvaro",
+    "Banco Aurora",
+    "Rodobrás",
+  ]);
 });
 
 test("filters by kind", () => {
