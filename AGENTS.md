@@ -41,7 +41,7 @@ producers -> consumers -> services -> repositories / clients
 - Type every function. Pydantic models at every boundary (signals, LLM responses, documents).
 - Functions with more than one parameter take keyword-only parameters: `def f(*, a, b)`.
 - No names starting with `_`. Files in `snake_case.py`.
-- No comments or docstrings; record design decisions in the "Decisions" section of `README.md`.
+- No comments or docstrings; record design decisions in `docs/decisions.md`.
 - No emojis in code, commits or docs.
 - Tests are named after the behavior they check. Write the test first for normalization and
   decision rules.
