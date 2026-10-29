@@ -47,3 +47,14 @@ producers -> consumers -> services -> repositories / clients
   decision rules.
 - Commits follow Conventional Commits: `type(scope): description`.
 - Never edit `data/`.
+
+TypeScript (`frontend/`, see [frontend/README.md](frontend/README.md)):
+
+- `strict`. No `any`, no `as` assertions (ESLint enforces both).
+- Declare functions with `function`, not `const f = () => {}`.
+- Functions with several parameters take one object parameter.
+- Components in `PascalCase.tsx`, other files in `camelCase.ts`.
+- Server data only through the TanStack Query hooks in `src/api/`, one per endpoint.
+- Logic that computes what the screens show goes in `src/logic/` as pure functions, with tests.
+- Never edit `src/api/schema.gen.ts`; regenerate it with `pnpm api:generate`.
+- No comments.

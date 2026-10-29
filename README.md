@@ -215,6 +215,8 @@ A read-only web app that replays the last run (shown in the
 - **Entities:** a page per entity with its emails, aliases, every mention, how the
   description changed, and a "protected homonym" note when a guard kept another person apart.
 
+How the UI is built (code map, data flow, commands): [frontend/README.md](frontend/README.md).
+
 The API behind it only reads `data/` and `out/`, so it works without Elasticsearch running:
 
 | Route | Returns |
@@ -230,7 +232,8 @@ If the run output is missing, it returns `404` as `application/problem+json` wit
 ## Code map
 
 Dependencies point one way: `producers -> consumers -> services -> repositories / clients`,
-with `types` shared by all. The rules that decide a merge live in two files:
+with `types` shared by all. The UI has its own map and commands in
+[frontend/README.md](frontend/README.md). The rules that decide a merge live in two files:
 `services/decision_rules.py` and `services/normalization.py`.
 
 ```text
@@ -253,7 +256,7 @@ with `types` shared by all. The rules that decide a merge live in two files:
 ├── tests/
 │   ├── unit/                 # Rules, normalization, client, API
 │   └── integration/          # Elasticsearch repository (needs `make up`)
-├── frontend/src/             # React UI (`make ui`)
+├── frontend/src/             # React UI (`make ui`), see frontend/README.md
 │   ├── pages/                # Replay, Review, Entities, Entity
 │   ├── components/           # Panels and replay controls
 │   ├── logic/                # Pure, tested logic (state at a signal, highlights)
@@ -296,5 +299,6 @@ cd frontend && pnpm install && pnpm test  # frontend unit tests
 - [Demo video](https://www.youtube.com/watch?v=ycPjflzUv3A): the whole project in 6 minutes.
 - [docs/decisions.md](docs/decisions.md): why each rule is the way it is.
 - [docs/backlog.md](docs/backlog.md): what was left out, and why.
+- [frontend/README.md](frontend/README.md): the UI's code map, data flow and commands.
 - [AGENTS.md](AGENTS.md): commands, layers and code rules for contributors.
 - [LICENSE.md](LICENSE.md): PolyForm Noncommercial 1.0.0.
