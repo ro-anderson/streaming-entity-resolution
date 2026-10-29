@@ -80,3 +80,67 @@ def find_original_span(*, haystack: str, needle: str) -> str | None:
     if found is None:
         return None
     return haystack[origins[found.start()] : origins[found.end() - 1] + 1]
+
+
+MIN_FUZZY_TOKEN = 4
+MAX_SPLIT_OVERFLOW = 2
+TOKEN_PATTERN = re.compile(r"[0-9a-z]+")
+
+
+def within_one_edit(*, left: str, right: str) -> bool:
+    if abs(len(left) - len(right)) > 1:
+        return False
+    if len(left) > len(right):
+        left, right = right, left
+    for index in range(len(right)):
+        if index >= len(left) or left[index] != right[index]:
+            same_length = len(left) == len(right)
+            rest_left = left[index + 1 :] if same_length else left[index:]
+            return rest_left == right[index + 1 :]
+    return True
+
+
+def is_compatible_token(*, token: str, name_tokens: list[str]) -> bool:
+    for name_token in name_tokens:
+        if token == name_token or name_token.startswith(token):
+            return True
+        fuzzy = len(token) >= MIN_FUZZY_TOKEN and len(name_token) >= MIN_FUZZY_TOKEN
+        if fuzzy and within_one_edit(left=token, right=name_token):
+            return True
+    return False
+
+
+def continues_split_token(*, previous: str, token: str, name_tokens: list[str]) -> bool:
+    joined = previous + token
+    return any(
+        name_token != previous
+        and name_token.startswith(previous)
+        and len(joined) <= len(name_token) + MAX_SPLIT_OVERFLOW
+        for name_token in name_tokens
+    )
+
+
+def trim_to_name(*, surface: str, name: str) -> str | None:
+    name_tokens = tokens(name)
+    folded, origins = fold_with_index(surface)
+    found = [
+        (match.group(), match.start(), match.end()) for match in TOKEN_PATTERN.finditer(folded)
+    ]
+    compatible: list[bool] = []
+    for index, (token, _, _) in enumerate(found):
+        continues = (
+            index > 0
+            and compatible[index - 1]
+            and continues_split_token(
+                previous=found[index - 1][0], token=token, name_tokens=name_tokens
+            )
+        )
+        attached = len(token) > 1 or (index > 0 and compatible[index - 1])
+        matches = attached and is_compatible_token(token=token, name_tokens=name_tokens)
+        compatible.append(continues or matches)
+    kept = [position for position, flag in zip(found, compatible, strict=True) if flag]
+    if not kept:
+        return None
+    start = origins[kept[0][1]]
+    end = origins[kept[-1][2] - 1] + 1
+    return surface[start:end]

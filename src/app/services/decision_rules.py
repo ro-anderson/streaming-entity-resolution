@@ -55,14 +55,24 @@ def creates_on_ambiguity(*, observation: Observation) -> bool:
 
 
 def is_prefix_expansion(*, current: list[str], incoming: list[str]) -> bool:
+    adds_tokens = len(incoming) > len(current)
     position = 0
     for token in current:
-        while position < len(incoming) and not incoming[position].startswith(token):
+        while position < len(incoming) and not expands_token(
+            current=token, incoming=incoming[position], adds_tokens=adds_tokens
+        ):
             position += 1
         if position == len(incoming):
             return False
         position += 1
     return True
+
+
+def expands_token(*, current: str, incoming: str, adds_tokens: bool) -> bool:
+    if current == incoming:
+        return True
+    is_initial = len(current) == 1
+    return incoming.startswith(current) and (is_initial or adds_tokens)
 
 
 def choose_name(*, current: str, incoming: str) -> str:

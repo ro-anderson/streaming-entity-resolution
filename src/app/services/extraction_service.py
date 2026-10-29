@@ -1,5 +1,11 @@
 from app.clients.llm_client import LLMClient
-from app.services.normalization import domain_of, find_original_span, is_personal_domain, normalize
+from app.services.normalization import (
+    domain_of,
+    find_original_span,
+    is_personal_domain,
+    normalize,
+    trim_to_name,
+)
 from app.services.observation_builder import contacts_of, render_signal
 from app.services.prompts import EXTRACTION_SYSTEM_PROMPT
 from app.types.observation import ExtractionResult, Observation, ParticipantNote
@@ -48,7 +54,10 @@ class ExtractionService:
             located = [
                 locate_surface(signal=signal, surface=s) for s in [*entity.surfaces, entity.name]
             ]
-            surfaces = list(dict.fromkeys(span for span in located if span is not None))
+            trimmed = [
+                trim_to_name(surface=span, name=entity.name) for span in located if span is not None
+            ]
+            surfaces = list(dict.fromkeys(span for span in trimmed if span))
             if not surfaces:
                 continue
             domain = normalize(entity.domain) if entity.domain else None
