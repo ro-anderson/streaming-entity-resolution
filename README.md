@@ -12,7 +12,8 @@ The sample data in [`data/`](data) belongs to a fictional company, Caravela
 
 ## Quick start
 
-Requirements: Docker, [uv](https://docs.astral.sh/uv/) and an OpenAI API key.
+Requirements: Docker, [uv](https://docs.astral.sh/uv/), Node 22 with pnpm (for the UI) and an
+OpenAI API key.
 
 ```sh
 cp .env.example .env      # fill OPENAI_API_KEY
@@ -100,6 +101,25 @@ make api   # http://localhost:8000/docs
 | `GET /api/reviews` | `out/needs_review.json` |
 
 A missing run output returns `404` as `application/problem+json` with code `RUN_NOT_FOUND`.
+
+## UI
+
+A read-only replay of the last run, served by the API above:
+
+```sh
+make api   # terminal 1
+make ui    # terminal 2, http://localhost:5173
+```
+
+- **Replay:** steps through the signals in order (0.5x, 1x, 2x), highlights each mention by
+  outcome (matched, created, sent to review) and shows the decision trace: exact match,
+  search candidates with scores, candidates removed by a guard, the LLM decision and the
+  resulting change. The repository panel shows the state right after the selected signal,
+  rebuilt in the browser from the trace.
+- **Review:** the mentions the pipeline did not attribute, with the reason and the candidates
+  it considered. It is a report; manual review is in the [backlog](BACKLOG.md).
+- **Entities:** search, identity, how the description changed (revisions), where the entity
+  appears, and a "protected homonym" note when a guard actually kept someone apart from it.
 
 ## Output
 
