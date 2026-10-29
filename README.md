@@ -1,1 +1,148 @@
 # streaming-entity-resolution
+
+Processes conversation signals (Slack messages and meeting transcripts) one at a time, in
+order, as if they were arriving live, and keeps a repository of the **people** and
+**organizations** they talk about: who speaks, who attends and who is mentioned. "Jo",
+"Joana P." and `joana@example.com` should end up as one entity; two different people must
+never be merged.
+
+The sample data in [`data/`](data) belongs to a fictional company, Caravela
+([`data/tenant.json`](data/tenant.json)), with 57 signals in
+[`data/signals.jsonl`](data/signals.jsonl).
+
+## Quick start
+
+Requirements: Docker, [uv](https://docs.astral.sh/uv/) and an OpenAI API key.
+
+```sh
+cp .env.example .env      # fill OPENAI_API_KEY
+make up                   # Elasticsearch on :9200
+make install
+make run                  # writes out/entities.json and out/needs_review.json
+make check                # validates the critical invariants of the output
+```
+
+`make help` lists every target. LLM responses are cached in `.cache/llm/`, so a second
+`make run` is fast, free and reproducible; `make run-no-cache` ignores the cache.
+
+## Architecture
+
+The production design this code is shaped after:
+
+```mermaid
+flowchart LR
+  S[Slack] --> SNS
+  M[Meet] --> SNS
+  SNS --> Q[SQS FIFO]
+  Q --> C[Consumer]
+  C --> D[(DynamoDB<br/>raw signals)]
+  D -- CDC --> L[Lambda<br/>resolution]
+  L --> OS[(OpenSearch<br/>person / organization)]
+```
+
+What runs locally today, with no simulated AWS infrastructure:
+
+```mermaid
+flowchart LR
+  F[signals.jsonl] --> P[JsonlSignalProducer]
+  P --> C[SignalConsumer]
+  C --> X[ExtractionService]
+  C --> R[ResolutionService]
+  R --> E[EntityService<br/>create / update]
+  E --> ES[(Elasticsearch<br/>person / organization)]
+  R --> RV[(needs_review<br/>in memory)]
+```
+
+The producer stands in for SNS + SQS FIFO (ordering), the consumer for the queue consumer
+and the CDC-triggered Lambda, and `EntityService` for the create/update endpoints. Each
+piece can be swapped for its cloud counterpart without touching the resolution logic.
+
+## Pipeline
+
+For each signal, in order:
+
+1. **Structured observations, no LLM.** The author and participants become one person
+   observation per email. A speaker inherits a participant's email only when the full
+   normalized name is identical. Bots are ignored. Unnamed speakers ("Speaker 3") go to
+   review.
+2. **LLM extraction, one call per signal.** The model reads the free text (message, or
+   meeting title and utterances) with the participants as context and returns the
+   people and organizations mentioned, grouped within the signal, plus a short note for
+   each participant. A surface the model returns is kept only if it occurs in the signal
+   (case and accent insensitive), and the stored surface is the exact original span.
+3. **Organizations first, then people**, so a person can be linked to an organization
+   created moments earlier in the same signal.
+4. **Resolution of each observation:**
+   - Exact match: email for a person, email domain for an organization.
+   - Otherwise lexical search in Elasticsearch (fuzzy `multi_match` on name and aliases,
+     plus an edge n-gram subfield for nicknames), top 5 of the same kind.
+   - Candidates that violate a hard guard are dropped.
+   - The LLM decides `match`, `new` or `ambiguous`, with a confidence and an updated
+     description.
+   - A merge needs `match`, confidence of at least 0.85 and a candidate id that was offered.
+     Everything else uncertain goes to `needs_review` without creating an entity.
+5. After the last signal, the repository is exported.
+
+## Output
+
+`out/entities.json`:
+
+```json
+{
+  "id": "e_004",
+  "kind": "PERSON",
+  "name": "Luiz Barreto",
+  "aliases": [],
+  "emails": ["luiz.barreto@translog.com.br"],
+  "description": "Novo diretor da Translog, quem assina o contrato.",
+  "mentions": [{"signal_id": "s_001", "surface": "Luiz Barreto"}],
+  "revisions": [{"signal_id": "s_001", "name": "Luiz Barreto", "description": "..."}]
+}
+```
+
+- `mentions`: every place the entity appears, with the surface exactly as written in the
+  signal (text, title, author, participant or speaker).
+- `description`: what the entity is to the tenant company now.
+- `revisions`: one entry per signal that changed the name or the description.
+
+`out/needs_review.json`: the mentions that could not be attributed, with `signal_id`,
+`surface` and `reason`.
+
+## Decisions
+
+- **Splitting is cheap, merging is expensive.** Every uncertain path ends in review, never
+  in a merge or a new entity.
+- **Two hard guards only:** different non-empty emails, and different `org_id`s. The
+  `org_id` guard applies only to the search + LLM path; an exact email match overrides it,
+  so a person who changes companies is updated instead of blocked.
+- **Domain resolves organizations, not people.** For a person, the email domain only sets
+  the organization. When the LLM links a participant's domain to an organization, the
+  domain is stored on it, and the next email from that domain resolves without the LLM.
+- **Anchor rule:** a new person needs an email, a name with two or more tokens, an
+  organization or a role. A bare first name with nothing else goes to review.
+- **Name upgrade:** the name changes only when each token of the current name is a prefix
+  of a token of the new one ("Jo" to "Joana Prates", "Carlos M." to "Carlos Menezes").
+  Otherwise the new form becomes an alias ("Bia" and "Beatriz" stay apart as name and
+  alias).
+- **Revisions:** creation always writes one; an update writes one only when the name or
+  the description changed. The seeded tenant organization has no revision, since it does
+  not come from a signal.
+- **Lexical search first.** Freshly created entities have one-line descriptions, so
+  embeddings would add little at first. kNN comes next; `more_like_this` was discarded
+  because names are too short for term statistics.
+- **Writes use `refresh=wait_for`,** so a document saved earlier in the same signal is
+  visible to the next search.
+- **Models:** extraction and decision models are configured separately
+  (`EXTRACTION_MODEL`, `DECISION_MODEL`, default `gpt-5-mini`) with low reasoning effort.
+  The GPT-5 family does not take `temperature`, so reruns are made deterministic by the
+  disk cache, keyed by model, reasoning effort, prompts and schema.
+- **Elasticsearch is the source of truth** and is recreated on every run. Review items are
+  kept in memory because nothing reads them during processing.
+
+## Next steps
+
+See [BACKLOG.md](BACKLOG.md).
+
+## Development
+
+See [AGENTS.md](AGENTS.md) for commands, layers and code rules.
