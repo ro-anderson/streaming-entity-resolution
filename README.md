@@ -15,6 +15,9 @@ The sample data in [`data/`](data) belongs to a fictional company, Caravela
 names in transcripts, unnamed speakers, and three pairs of different people sharing a first
 name.
 
+**New here? [Take the guided tour](docs/demo.md)**: every screen of the UI, in the order of a
+demo, with screenshots and what each one shows about the pipeline.
+
 ## What you need
 
 | Tool | Used for |
@@ -276,6 +279,9 @@ Interactive docs at `http://127.0.0.1:8000/docs`.
 - **Entities:** search, identity, how the description changed, where the entity appears,
   and a "protected homonym" note when a guard actually kept someone apart from it.
 
+**[Take the guided tour](docs/demo.md)**: a demo storyboard that walks through every screen
+in order, with screenshots and what each one proves about the pipeline.
+
 ## Tests and CI
 
 | Layer | Framework | What it covers | In CI |
@@ -309,6 +315,7 @@ make run && make check                    # invariants on a real run
 
 ## Further reading
 
+- [docs/demo.md](docs/demo.md): the demo storyboard, every screen in order with screenshots.
 - [docs/decisions.md](docs/decisions.md): why each rule is the way it is.
 - [docs/backlog.md](docs/backlog.md): what was left out, and why.
 - [AGENTS.md](AGENTS.md): commands, layers and code rules for contributors.
