@@ -53,18 +53,51 @@ in [Tests and CI](#tests-and-ci).
 | `out/needs_review.json` | mentions that could not be attributed, with `signal_id`, `surface` and `reason` |
 | `out/trace.jsonl` | one event per resolved observation: candidates, guards, LLM decision, outcome, entity before and after |
 
-An entity:
+An entity from the sample run (lists shortened):
 
 ```json
 {
   "id": "e_005",
   "kind": "PERSON",
   "name": "Luiz Barreto",
-  "aliases": ["Luiz"],
-  "emails": ["luiz.barreto@translog.com.br"],
-  "description": "Novo diretor da Translog; é quem assina agora.",
-  "mentions": [{"signal_id": "s_001", "surface": "Luiz Barreto"}],
-  "revisions": [{"signal_id": "s_001", "name": "Luiz Barreto", "description": "..."}]
+  "aliases": [
+    "luís",
+    "Luiz"
+  ],
+  "emails": [
+    "luiz.barreto@translog.com.br"
+  ],
+  "description": "Luiz Barreto — Diretor na Translog envolvido na expansão; agora confirmado como o contato que enviou o contrato assinado para as 3 filiais novas.",
+  "mentions": [
+    {
+      "signal_id": "s_001",
+      "surface": "Luiz Barreto"
+    },
+    {
+      "signal_id": "s_021",
+      "surface": "Luiz Barreto"
+    },
+    {
+      "signal_id": "s_021",
+      "surface": "luís"
+    },
+    {
+      "signal_id": "...",
+      "surface": "..."
+    }
+  ],
+  "revisions": [
+    {
+      "signal_id": "s_001",
+      "name": "Luiz Barreto",
+      "description": "Novo diretor na Translog — agora é quem assina contratos (decisor)"
+    },
+    {
+      "signal_id": "...",
+      "name": "...",
+      "description": "..."
+    }
+  ]
 }
 ```
 

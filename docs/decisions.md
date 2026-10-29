@@ -122,7 +122,9 @@ can choose "Cargofy" over "CargoFai", but cannot invent a name.
 ### Revisions only on change
 
 Creation always writes a revision. An update writes one only when the name or the
-description changed. The seeded tenant organization has none, since it does not come from
+description changed, and there is at most one revision per signal: when the same signal
+updates an entity twice (as a participant and as a mention in the text), the second change
+replaces the first. The seeded tenant organization has none, since it does not come from
 a signal.
 
 ## Search
