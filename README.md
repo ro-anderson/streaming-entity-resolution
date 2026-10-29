@@ -215,6 +215,8 @@ A read-only web app that replays the last run (shown in the
 - **Entities:** a page per entity with its emails, aliases, every mention, how the
   description changed, and a "protected homonym" note when a guard kept another person apart.
 
+How the UI is built (code map, data flow, commands): [frontend/README.md](frontend/README.md).
+
 The API behind it only reads `data/` and `out/`, so it works without Elasticsearch running:
 
 | Route | Returns |
@@ -230,68 +232,40 @@ If the run output is missing, it returns `404` as `application/problem+json` wit
 ## Code map
 
 Dependencies point one way: `producers -> consumers -> services -> repositories / clients`,
-with `types` shared by all. The rules that decide a merge live in two files:
+with `types` shared by all. The UI has its own map and commands in
+[frontend/README.md](frontend/README.md). The rules that decide a merge live in two files:
 `services/decision_rules.py` and `services/normalization.py`.
 
 ```text
 .
-├── data/                  input signals and tenant (never edited)
+├── data/                     # Sample input: 57 signals and the tenant (never edited)
 ├── src/app/
-│   ├── main.py            pipeline entry point: reset, seed, consume every signal, export
-│   ├── check.py           `make check`: homonyms apart, Expresso Norte/Nordeste apart, unique emails
-│   ├── config.py          settings from env and .env (models, threshold, paths, URLs)
-│   ├── api.py             read-only FastAPI app over data/ and out/
-│   ├── openapi_dump.py    writes openapi.json, the contract the UI types are generated from
-│   ├── dependencies.py    FastAPI dependency wiring
-│   ├── errors.py          errors as application/problem+json
-│   ├── producers/         where signals come from
-│   │   ├── signal_producer.py        SignalProducer protocol
-│   │   └── jsonl_signal_producer.py  reads signals.jsonl in order, rejects out-of-order input
-│   ├── consumers/
-│   │   └── signal_consumer.py        one signal: observations, extraction, orgs then people
-│   ├── services/          business rules
-│   │   ├── normalization.py          case/accent folding, tokens, domains, surface span and trimming
-│   │   ├── decision_rules.py         guards, threshold, anchor, name upgrade, canonical org name
-│   │   ├── observation_builder.py    observations from author/participants/speakers; signal rendering
-│   │   ├── extraction_service.py     LLM extraction, surface validation
-│   │   ├── resolution_service.py     exact match, search, guards, LLM decision, trace
-│   │   ├── entity_service.py         create, update and seed (the "endpoints")
-│   │   ├── prompts.py                extraction and decision prompts
-│   │   └── export_service.py         writes entities.json and needs_review.json
-│   ├── repositories/      storage behind protocols
-│   │   ├── entity_repository.py      EntityRepository protocol
-│   │   ├── elastic_entity_repository.py  Elasticsearch implementation and search query
-│   │   ├── index_mappings.py         analyzers (folding, edge n-gram) and field mappings
-│   │   ├── review_repository.py      ReviewRepository protocol
-│   │   ├── memory_review_repository.py  in-memory review items
-│   │   ├── trace_recorder.py         TraceRecorder protocol and JSONL writer
-│   │   └── run_files.py              reads the run output for the API
-│   ├── clients/           external services
-│   │   ├── llm_client.py             LLMClient protocol
-│   │   ├── openai_client.py          structured outputs and embeddings, through the cache
-│   │   ├── disk_cache.py             response cache keyed by sha256
-│   │   └── elastic_client.py         Elasticsearch client from settings
-│   ├── handlers/
-│   │   └── run.py                    GET /api/signals, /api/trace, /api/entities, /api/reviews
-│   └── types/             Pydantic models shared by every layer
-│       ├── signal.py                 Signal, Contact, Utterance, Tenant
-│       ├── entity.py                 Entity, Mention, Revision, SearchHit, EntityExport
-│       ├── observation.py            LLM extraction schema and Observation
-│       ├── decision.py               CandidateDecision, ReviewItem
-│       └── trace.py                  TraceEvent
+│   ├── producers/            # Read signals one at a time, in order
+│   ├── consumers/            # Handle one signal: find mentions, resolve them
+│   ├── services/             # Business rules
+│   │   ├── decision_rules.py # Guards, 0.85 threshold, name rules
+│   │   ├── normalization.py  # Case and accent folding, surface trimming
+│   │   └── resolution_service.py  # The four steps for each mention
+│   ├── repositories/         # Storage: Elasticsearch, review list, trace
+│   ├── clients/              # OpenAI (with disk cache) and Elasticsearch
+│   ├── handlers/             # Read-only API routes
+│   ├── types/                # Pydantic models shared by every layer
+│   ├── main.py               # Pipeline entry point (`make run`)
+│   ├── check.py              # Invariant checks (`make check`)
+│   └── api.py                # Read-only API (`make api`)
 ├── tests/
-│   ├── unit/              normalization, decision rules, entity revisions, OpenAI client and cache, API
-│   └── integration/       Elasticsearch repository (needs `make up`)
-├── frontend/              React UI (Vite, TanStack Query)
-│   └── src/
-│       ├── api/           one query hook per endpoint, generated types (schema.gen.ts)
-│       ├── logic/         pure, tested logic: repository state at a signal, highlights, entity list
-│       ├── components/    signal list, trace panel, repository panel, replay controls
-│       └── pages/         Replay, Review, Entities, Entity
-├── docs/                  decisions and backlog
-├── compose.yaml           Elasticsearch
-├── Makefile               every command
-└── AGENTS.md              commands and code rules for coding agents
+│   ├── unit/                 # Rules, normalization, client, API
+│   └── integration/          # Elasticsearch repository (needs `make up`)
+├── frontend/src/             # React UI (`make ui`), see frontend/README.md
+│   ├── pages/                # Replay, Review, Entities, Entity
+│   ├── components/           # Panels and replay controls
+│   ├── logic/                # Pure, tested logic (state at a signal, highlights)
+│   └── api/                  # One query hook per endpoint, generated types
+├── docs/                     # Design decisions and backlog
+├── compose.yaml              # Elasticsearch
+├── Makefile                  # Every command (`make help`)
+├── pyproject.toml            # Python dependencies
+└── .env.example              # Environment variables template
 ```
 
 ## Tests and CI
@@ -325,5 +299,6 @@ cd frontend && pnpm install && pnpm test  # frontend unit tests
 - [Demo video](https://www.youtube.com/watch?v=ycPjflzUv3A): the whole project in 6 minutes.
 - [docs/decisions.md](docs/decisions.md): why each rule is the way it is.
 - [docs/backlog.md](docs/backlog.md): what was left out, and why.
+- [frontend/README.md](frontend/README.md): the UI's code map, data flow and commands.
 - [AGENTS.md](AGENTS.md): commands, layers and code rules for contributors.
 - [LICENSE.md](LICENSE.md): PolyForm Noncommercial 1.0.0.
