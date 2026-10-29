@@ -1,5 +1,6 @@
 from app.services.decision_rules import (
     accepts_match,
+    canonical_name,
     choose_name,
     creates_on_ambiguity,
     guard_violation,
@@ -31,6 +32,7 @@ def decision(
             "confidence": confidence,
             "reason": "",
             "description": "",
+            "name": None,
         }
     )
 
@@ -165,3 +167,26 @@ def test_choose_name_keeps_name_against_longer_misspelling() -> None:
 
 def test_choose_name_upgrades_nickname_when_surname_arrives() -> None:
     assert choose_name(current="Rafa", incoming="Rafael Teixeira") == "Rafael Teixeira"
+
+
+def organization(*, name: str, aliases: list[str]) -> Entity:
+    return Entity(id="e_012", kind="ORGANIZATION", name=name, aliases=aliases)
+
+
+def test_canonical_name_accepts_a_known_spelling() -> None:
+    entity = organization(name="CargoFai", aliases=["cargo fai"])
+    observation = Observation(kind="ORGANIZATION", name="Cargofy", surfaces=["Cargofy"])
+    chosen = canonical_name(entity=entity, observation=observation, proposed="cargofy")
+    assert chosen == "Cargofy"
+
+
+def test_canonical_name_rejects_an_invented_name() -> None:
+    entity = organization(name="Vector", aliases=["vetor"])
+    observation = Observation(kind="ORGANIZATION", name="Vetor", surfaces=["Vetor"])
+    assert canonical_name(entity=entity, observation=observation, proposed="Vetor Ventures") is None
+
+
+def test_canonical_name_ignores_missing_proposal() -> None:
+    entity = organization(name="Translog", aliases=[])
+    observation = Observation(kind="ORGANIZATION", name="Translog", surfaces=["Translog"])
+    assert canonical_name(entity=entity, observation=observation, proposed=None) is None

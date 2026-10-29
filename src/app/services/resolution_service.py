@@ -7,6 +7,7 @@ from app.repositories.review_repository import ReviewRepository
 from app.repositories.trace_recorder import TraceRecorder
 from app.services.decision_rules import (
     accepts_match,
+    canonical_name,
     creates_on_ambiguity,
     guard_violation,
     has_anchor,
@@ -103,12 +104,18 @@ class ResolutionService:
         candidate_ids = {candidate.id for candidate in candidates}
         if accepts_match(decision=decision, candidate_ids=candidate_ids, threshold=self.threshold):
             target = next(c for c in candidates if c.id == decision.candidate_id)
+            renamed = (
+                canonical_name(entity=target, observation=observation, proposed=decision.name)
+                if observation.kind == "ORGANIZATION"
+                else None
+            )
             updated = self.entities.update(
                 entity=target,
                 signal_id=signal.id,
                 observation=observation,
                 org_id=org_id,
                 description=decision.description,
+                name_override=renamed,
             )
             self.record(
                 signal=signal,

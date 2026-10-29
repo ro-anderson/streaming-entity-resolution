@@ -89,6 +89,8 @@ export interface components {
       decision: "match" | "new" | "ambiguous";
       /** Description */
       description: string;
+      /** Name */
+      name: string | null;
       /** Reason */
       reason: string;
     };

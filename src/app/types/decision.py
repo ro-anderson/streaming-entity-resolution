@@ -9,6 +9,7 @@ class CandidateDecision(BaseModel):
     confidence: float
     reason: str
     description: str
+    name: str | None
 
 
 class ReviewItem(BaseModel):

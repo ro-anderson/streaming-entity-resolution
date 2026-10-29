@@ -54,6 +54,15 @@ def creates_on_ambiguity(*, observation: Observation) -> bool:
     return observation.email is not None
 
 
+def canonical_name(*, entity: Entity, observation: Observation, proposed: str | None) -> str | None:
+    if not proposed:
+        return None
+    known = [entity.name, *entity.aliases, observation.name, *observation.surfaces]
+    spellings = [form for form in known if normalize(form) == normalize(proposed)]
+    capitalized = [form for form in spellings if form != form.lower()]
+    return next(iter(capitalized or spellings), None)
+
+
 def is_prefix_expansion(*, current: list[str], incoming: list[str]) -> bool:
     adds_tokens = len(incoming) > len(current)
     position = 0

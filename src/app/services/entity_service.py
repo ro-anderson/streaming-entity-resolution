@@ -26,8 +26,9 @@ def merge_observation(
     org_id: str | None,
     description: str,
     replace_org: bool,
+    name_override: str | None = None,
 ) -> Entity:
-    name = choose_name(current=entity.name, incoming=observation.name)
+    name = name_override or choose_name(current=entity.name, incoming=observation.name)
     aliases = unique_by_key(
         values=[*entity.aliases, entity.name, observation.name, *observation.surfaces],
         excluded={normalize(name)},
@@ -65,7 +66,8 @@ def with_revision(*, before: Entity | None, after: Entity, signal_id: str) -> En
     if unchanged:
         return after
     revision = Revision(signal_id=signal_id, name=after.name, description=after.description)
-    return after.model_copy(update={"revisions": [*after.revisions, revision]})
+    earlier = [r for r in after.revisions if r.signal_id != signal_id]
+    return after.model_copy(update={"revisions": [*earlier, revision]})
 
 
 class EntityService:
@@ -97,6 +99,7 @@ class EntityService:
         org_id: str | None,
         description: str,
         replace_org: bool = False,
+        name_override: str | None = None,
     ) -> Entity:
         merged = merge_observation(
             entity=entity,
@@ -105,6 +108,7 @@ class EntityService:
             org_id=org_id,
             description=description,
             replace_org=replace_org,
+            name_override=name_override,
         )
         updated = with_revision(before=entity, after=merged, signal_id=signal_id)
         self.repository.save(entity=updated)
