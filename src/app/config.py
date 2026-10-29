@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -12,7 +13,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     extraction_model: str = "gpt-5-mini"
     decision_model: str = "gpt-5-mini"
-    reasoning_effort: str = "low"
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] = "low"
     elasticsearch_url: str = "http://localhost:9200"
     index_prefix: str = ""
     llm_cache_enabled: bool = True
