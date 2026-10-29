@@ -1,117 +1,71 @@
 # streaming-entity-resolution
 
-Reads a company's conversations (Slack messages and meeting transcripts) **one signal at a
-time, in order, as if they were arriving live**, and keeps a single repository of the
-**people** and **organizations** they talk about: who speaks, who attends and who is
-mentioned.
+A small system that reads a company's conversations, **one message at a time, in the order
+they happened**, and keeps a single, clean record of every **person** and **organization**
+they talk about.
 
-"Jo", "Joana P." and `joana@example.com` should end up as one entity. Two different people
-must never be merged: when the pipeline cannot tell who a mention refers to, it sends it to
-review instead of guessing.
+![YouTube](docs/images/ytb.png)
+[Watch the 6-minute demo video](https://www.youtube.com/watch?v=ycPjflzUv3A): the problem,
+the architecture, the code that matters, and a replay of a real run in the UI.
 
-The sample data in [`data/`](data) belongs to a fictional company, Caravela
-([`tenant.json`](data/tenant.json)), with 57 signals in
-[`signals.jsonl`](data/signals.jsonl). It includes the hard cases: nicknames, misheard
-names in transcripts, unnamed speakers, and three pairs of different people sharing a first
-name.
+## What it does
 
-**New here? [Take the guided tour](docs/demo.md)**: every screen of the UI, in the order of a
-demo, with screenshots and what each one shows about the pipeline.
+In a company's Slack messages and meeting transcripts, the same person shows up in many
+forms: "Jo" in one message, "Joana P." in another, only `joana@example.com` in a third. This
+project figures out that they are one person and keeps one record for her, updating it as new
+messages arrive.
 
-## What you need
+One rule comes before everything else: **never merge two different people.** When the system
+is not sure who a name refers to, it does not guess; it puts the name on a review list for a
+human.
 
-| Tool | Used for |
+The sample data in [`data/`](data) comes from a fictional company, Caravela: 57 messages and
+meetings in [`signals.jsonl`](data/signals.jsonl), with the hard cases on purpose (nicknames,
+names misheard by transcription, unnamed speakers, and three pairs of different people who
+share a first name).
+
+### Key terms
+
+| Term | Meaning |
 | --- | --- |
-| [Docker](https://docs.docker.com/get-docker/) with Compose | Elasticsearch, the entity store |
-| [uv](https://docs.astral.sh/uv/) | Python 3.12 and its dependencies |
-| An OpenAI API key | entity extraction and match decisions |
-| Node 22 and [pnpm](https://pnpm.io/) | the UI only |
+| **Signal** | One Slack message or one meeting transcript. Signals are processed in order. |
+| **Entity** | The record of one person or one organization. |
+| **Mention** | A name found in a signal, exactly as written ("Pedro", "trans log", "Speaker 3"). |
+| **Candidate** | An existing entity that a mention might refer to, found by search. |
+| **Guard** | A fixed rule that removes a candidate that cannot be the same person (different email, different organization). |
+| **Threshold** | The minimum confidence (0.85) the language model must give before a mention is joined to a candidate. |
+| **Review list** | Mentions the system did not attribute, left for a human. |
+| **Trace** | A log of every decision, used by the UI to replay the run. |
 
 ## Quick start
+
+You need [Docker](https://docs.docker.com/get-docker/) with Compose (for Elasticsearch),
+[uv](https://docs.astral.sh/uv/) (Python 3.12), an OpenAI API key, and Node 22 with
+[pnpm](https://pnpm.io/) for the UI.
 
 ```sh
 cp .env.example .env      # set OPENAI_API_KEY
 make up                   # start Elasticsearch on :9200
 make install              # install Python dependencies
-make run                  # process the signals, write out/
-make check                # validate the critical invariants of the output
+make run                  # process the 57 signals and write out/
+make check                # confirm no two people were merged
 ```
 
-Then, to explore the run in the browser:
+Explore the run in the browser:
 
 ```sh
 make api                  # terminal 1: read-only API on :8000
-make ui                   # terminal 2: http://localhost:5173
+make ui                   # terminal 2: open http://localhost:5173
 ```
 
-LLM responses are cached in `.cache/llm/`: a second `make run` is fast, free and identical.
-`make run-no-cache` ignores the cache. `make help` lists every target. Tests are described
-in [Tests and CI](#tests-and-ci).
+Language model answers are cached in `.cache/llm/`, so running `make run` again is fast, free
+and gives the same result. `make help` lists every command.
 
-## Output
+## How it works
 
-| File | Content |
-| --- | --- |
-| `out/entities.json` | the repository after the last signal |
-| `out/needs_review.json` | mentions that could not be attributed, with `signal_id`, `surface` and `reason` |
-| `out/trace.jsonl` | one event per resolved observation: candidates, guards, LLM decision, outcome, entity before and after |
+### Architecture
 
-An entity from the sample run (lists shortened):
-
-```json
-{
-  "id": "e_005",
-  "kind": "PERSON",
-  "name": "Luiz Barreto",
-  "aliases": [
-    "luís",
-    "Luiz"
-  ],
-  "emails": [
-    "luiz.barreto@translog.com.br"
-  ],
-  "description": "Luiz Barreto — Diretor na Translog envolvido na expansão; agora confirmado como o contato que enviou o contrato assinado para as 3 filiais novas.",
-  "mentions": [
-    {
-      "signal_id": "s_001",
-      "surface": "Luiz Barreto"
-    },
-    {
-      "signal_id": "s_021",
-      "surface": "Luiz Barreto"
-    },
-    {
-      "signal_id": "s_021",
-      "surface": "luís"
-    },
-    {
-      "signal_id": "...",
-      "surface": "..."
-    }
-  ],
-  "revisions": [
-    {
-      "signal_id": "s_001",
-      "name": "Luiz Barreto",
-      "description": "Novo diretor na Translog — agora é quem assina contratos (decisor)"
-    },
-    {
-      "signal_id": "...",
-      "name": "...",
-      "description": "..."
-    }
-  ]
-}
-```
-
-- `mentions`: every place the entity appears, with the surface exactly as written in the
-  signal (text, title, author, participant or speaker).
-- `description`: what the entity is to the company now.
-- `revisions`: one entry per signal that changed the name or the description.
-
-## Architecture
-
-The production design the code is shaped after:
+The code is shaped after this production design:
 
 ```mermaid
 flowchart LR
@@ -124,7 +78,7 @@ flowchart LR
   L --> OS[(OpenSearch<br/>person / organization)]
 ```
 
-What runs locally, with no simulated AWS infrastructure:
+Locally the same roles run as plain Python in one loop, with no simulated cloud:
 
 ```mermaid
 flowchart LR
@@ -140,13 +94,35 @@ flowchart LR
   O --> API[read-only API] --> UI[UI]
 ```
 
-The producer stands in for SNS + SQS FIFO (ordering), the consumer for the queue consumer
-and the CDC-triggered Lambda, and `EntityService` for the create and update endpoints. Each
-piece can be replaced by its cloud counterpart without touching the resolution logic.
+| Local piece | Plays the role of | Does |
+| --- | --- | --- |
+| `JsonlSignalProducer` | SNS + SQS FIFO | delivers signals one at a time, in order |
+| `SignalConsumer` | queue consumer + Lambda | finds the mentions in a signal and resolves them |
+| `EntityService` | create and update endpoints | writes entities to Elasticsearch |
+| Elasticsearch | OpenSearch | stores and searches entities |
 
-## Pipeline
+Each piece can be swapped for its cloud counterpart without touching the resolution logic.
 
-What happens to one signal:
+### Resolving a mention
+
+For every signal, the system first lists the mentions. People who wrote or attended come
+from the message fields, with their emails. Names inside the text are found by a language
+model. Organizations are resolved before people, so a person can be linked to their
+organization. Then each mention goes through four steps:
+
+1. **Exact match.** A known email (person) or email domain (organization) finds the entity
+   right away, without search or language model.
+2. **Search.** Elasticsearch looks for entities with a similar name (typos, accents and
+   nicknames included) and keeps the five best as candidates.
+3. **Guards.** Candidates with a different email, or from a different organization, are
+   removed.
+4. **Decision.** A language model reads the signal and the remaining candidates and answers
+   "it is this one", "it is someone new" or "not clear", with a confidence from 0 to 1. The
+   mention is joined to the candidate only if the answer is a match with confidence of at
+   least 0.85. A new person is created only if there is something to anchor them (an email,
+   a full name, an organization or a role). Everything else goes to the review list.
+
+The same flow as a sequence diagram:
 
 ```mermaid
 sequenceDiagram
@@ -187,10 +163,75 @@ sequenceDiagram
   end
 ```
 
-After the last signal, the repository, the review items and the trace are exported to
-`out/`. The reasons behind each rule are in [docs/decisions.md](docs/decisions.md).
+Why each rule is the way it is, with numbers from the sample run, is in
+[docs/decisions.md](docs/decisions.md).
+
+## Output
+
+After the last signal, `make run` writes three files to `out/`:
+
+| File | Content |
+| --- | --- |
+| `entities.json` | every entity, as it stands after the last signal |
+| `needs_review.json` | the review list: `signal_id`, `surface` and `reason` for each mention |
+| `trace.jsonl` | one event per decision: candidates, guards, model answer, outcome, entity before and after |
+
+One entity from the sample run, shortened:
+
+```json
+{
+  "id": "e_005",
+  "kind": "PERSON",
+  "name": "Luiz Barreto",
+  "aliases": ["luís", "Luiz"],
+  "emails": ["luiz.barreto@translog.com.br"],
+  "description": "Luiz Barreto — Diretor na Translog envolvido na expansão; ...",
+  "mentions": [
+    {"signal_id": "s_001", "surface": "Luiz Barreto"},
+    {"signal_id": "s_021", "surface": "luís"}
+  ],
+  "revisions": [
+    {"signal_id": "s_001", "name": "Luiz Barreto", "description": "Novo diretor na Translog — ..."}
+  ]
+}
+```
+
+- `aliases`: other names this entity was called.
+- `mentions`: every place the entity appears, with the exact text from the signal.
+- `description`: what the entity is to the company now.
+- `revisions`: one entry for each signal that changed the name or the description.
+
+## The UI
+
+A read-only web app that replays the last run (shown in the
+[demo video](https://www.youtube.com/watch?v=ycPjflzUv3A)):
+
+- **Replay:** goes through the signals in order (0.5x, 1x, 2x). Each name is colored by what
+  happened to it: green, joined to an existing entity; blue, a new entity; orange, sent to
+  review. The middle panel shows the four steps for one mention, and the right panel shows
+  all entities as they stood right after that signal.
+- **Review:** every mention the system did not attribute, with the reason and the candidates
+  it considered.
+- **Entities:** a page per entity with its emails, aliases, every mention, how the
+  description changed, and a "protected homonym" note when a guard kept another person apart.
+
+The API behind it only reads `data/` and `out/`, so it works without Elasticsearch running:
+
+| Route | Returns |
+| --- | --- |
+| `GET /api/signals` | the signals, in order |
+| `GET /api/trace` | the decision trace |
+| `GET /api/entities` | `out/entities.json` |
+| `GET /api/reviews` | `out/needs_review.json` |
+
+If the run output is missing, it returns `404` as `application/problem+json` with code
+`RUN_NOT_FOUND`. Interactive docs: `http://127.0.0.1:8000/docs`.
 
 ## Code map
+
+Dependencies point one way: `producers -> consumers -> services -> repositories / clients`,
+with `types` shared by all. The rules that decide a merge live in two files:
+`services/decision_rules.py` and `services/normalization.py`.
 
 ```text
 .
@@ -239,12 +280,12 @@ After the last signal, the repository, the review items and the trace are export
 │       ├── decision.py               CandidateDecision, ReviewItem
 │       └── trace.py                  TraceEvent
 ├── tests/
-│   ├── unit/              normalization, decision rules, OpenAI client and cache, API
+│   ├── unit/              normalization, decision rules, entity revisions, OpenAI client and cache, API
 │   └── integration/       Elasticsearch repository (needs `make up`)
 ├── frontend/              React UI (Vite, TanStack Query)
 │   └── src/
 │       ├── api/           one query hook per endpoint, generated types (schema.gen.ts)
-│       ├── logic/         pure, tested logic: repository state at a signal, highlights, event choice
+│       ├── logic/         pure, tested logic: repository state at a signal, highlights, entity list
 │       ├── components/    signal list, trace panel, repository panel, replay controls
 │       └── pages/         Replay, Review, Entities, Entity
 ├── docs/                  decisions and backlog
@@ -253,69 +294,36 @@ After the last signal, the repository, the review items and the trace are export
 └── AGENTS.md              commands and code rules for coding agents
 ```
 
-Dependencies point one way: `producers -> consumers -> services -> repositories / clients`,
-with `types` shared by all.
-
-## API
-
-| Route | Returns |
-| --- | --- |
-| `GET /api/signals` | the signals, in order |
-| `GET /api/trace` | the decision trace |
-| `GET /api/entities` | `out/entities.json` |
-| `GET /api/reviews` | `out/needs_review.json` |
-
-A missing run output returns `404` as `application/problem+json` with code `RUN_NOT_FOUND`.
-Interactive docs at `http://127.0.0.1:8000/docs`.
-
-## UI
-
-- **Replay:** steps through the signals (0.5x, 1x, 2x), highlights each mention by outcome
-  (matched, created, sent to review) and shows the decision trace: exact match, search
-  candidates with scores, candidates removed by a guard, the LLM decision and the resulting
-  change. The repository panel shows the state right after the selected signal.
-- **Review:** the mentions the pipeline did not attribute, with the reason and the
-  candidates it considered. A report, not a work queue.
-- **Entities:** search, identity, how the description changed, where the entity appears,
-  and a "protected homonym" note when a guard actually kept someone apart from it.
-
-**[Take the guided tour](docs/demo.md)**: a demo storyboard that walks through every screen
-in order, with screenshots and what each one proves about the pipeline.
-
 ## Tests and CI
 
 | Layer | Framework | What it covers | In CI |
 | --- | --- | --- | --- |
-| Backend unit (56) | [pytest](https://docs.pytest.org/) | normalization and surface trimming (18), decision rules: guards, threshold, anchor, name upgrade, canonical organization name (29), OpenAI client and disk cache with hand-written fakes (7), API routes with FastAPI's `TestClient` (2) | yes |
-| Backend integration (11) | pytest against a real Elasticsearch | the repository: mappings, exact lookups, fuzzy and prefix search, accent folding, kinds kept apart; skipped when Elasticsearch is not running | no |
-| Frontend unit (17) | [Vitest](https://vitest.dev/) | the pure logic: repository state at a signal, highlight segmentation (longest first, no overlap), default trace event | yes |
-| Invariants | `make check` on a real run | homonyms never merged, Expresso Norte and Nordeste apart, no email in two entities | no, needs an OpenAI key |
-| End to end | none yet | a browser test of the UI over a recorded run is in the [backlog](docs/backlog.md) | no |
+| Backend unit (59) | [pytest](https://docs.pytest.org/) | normalization and surface trimming, decision rules (guards, threshold, anchor, name upgrade, canonical organization name), entity revisions, OpenAI client and disk cache, API routes | yes |
+| Backend integration (11) | pytest with a real Elasticsearch | mappings, exact lookups, fuzzy and prefix search, accent folding; skipped when Elasticsearch is not running | no |
+| Frontend unit (22) | [Vitest](https://vitest.dev/) | repository state at a signal, highlights without overlap, default trace event, entity list filter and order | yes |
+| Invariants | `make check` on a real run | no two people merged, Expresso Norte and Nordeste apart, no email in two entities | no, needs an OpenAI key |
+| End to end | none yet | a browser test of the UI is in the [backlog](docs/backlog.md) | no |
 
-Unit tests come first where an error is expensive: normalization and the decision rules
-were written test first. They never call the LLM or Elasticsearch.
-
-Static checks: [ruff](https://docs.astral.sh/ruff/) (lint and format) and mypy strict
-(non-blocking for now) on the backend; ESLint with typed rules, Prettier and `tsc` on the
-frontend.
+The rules where a mistake is expensive (normalization and decision rules) were written test
+first. Unit tests never call the language model or Elasticsearch.
 
 ```sh
 make test                                 # backend unit tests
 make lint                                 # ruff, format check, mypy (non-blocking)
 uv run pytest tests/integration           # needs `make up`
 cd frontend && pnpm install && pnpm test  # frontend unit tests
-make run && make check                    # invariants on a real run
 ```
 
 [GitHub Actions](.github/workflows/ci.yaml) runs on every pull request and push to `main`:
 
-- **backend:** `uv sync --frozen`, ruff check, ruff format check, unit tests, and a check
-  that `openapi.json` matches the API (the UI types are generated from it).
-- **frontend:** `pnpm install --frozen-lockfile`, lint, typecheck, unit tests, build.
+- **backend:** ruff (lint and format), unit tests, and a check that `openapi.json` matches
+  the API, since the UI types are generated from it.
+- **frontend:** ESLint, Prettier, TypeScript type check, unit tests and build.
 
 ## Further reading
 
-- [docs/demo.md](docs/demo.md): the demo storyboard, every screen in order with screenshots.
+- [Demo video](https://www.youtube.com/watch?v=ycPjflzUv3A): the whole project in 6 minutes.
 - [docs/decisions.md](docs/decisions.md): why each rule is the way it is.
 - [docs/backlog.md](docs/backlog.md): what was left out, and why.
 - [AGENTS.md](AGENTS.md): commands, layers and code rules for contributors.
+- [LICENSE.md](LICENSE.md): PolyForm Noncommercial 1.0.0.
