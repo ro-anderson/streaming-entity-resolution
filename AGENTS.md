@@ -11,9 +11,12 @@ make run             # process data/signals.jsonl, export out/
 make run-no-cache    # same, ignoring .cache/llm
 make check           # invariants on out/entities.json
 make api             # read-only API over data/ and out/ on :8000
+make ui              # Vite dev server on :5173, proxies /api to :8000
 make test            # unit tests
 make lint            # ruff check, ruff format --check, mypy (non-blocking)
 uv run pytest tests/integration   # needs Elasticsearch running
+uv run python -m app.openapi_dump # rewrite openapi.json after API changes, then
+cd frontend && pnpm api:generate  # regenerate src/api/schema.gen.ts
 ```
 
 ## Layers

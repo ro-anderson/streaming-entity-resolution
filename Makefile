@@ -1,4 +1,4 @@
-.PHONY: up down install reset run run-no-cache check api test lint help
+.PHONY: up down install reset run run-no-cache check api ui test lint help
 
 SHELL=/bin/bash
 
@@ -40,6 +40,10 @@ check:
 api:
 	uv run fastapi dev src/app/api.py
 
+## Serve the frontend on :5173, proxying /api to :8000
+ui:
+	pnpm --dir frontend dev
+
 ## Run unit tests
 test:
 	uv run pytest tests/unit
@@ -61,6 +65,7 @@ help:
 	@echo "  make run-no-cache  - Same as run, ignoring the LLM cache"
 	@echo "  make check         - Validate the critical invariants of the output"
 	@echo "  make api           - Serve the last run read-only on :8000"
+	@echo "  make ui            - Serve the frontend on :5173"
 	@echo "  make test          - Run unit tests"
 	@echo "  make lint          - Lint, format check and type check"
 

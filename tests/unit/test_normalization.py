@@ -8,6 +8,7 @@ from app.services.normalization import (
     normalize,
     strip_leading_article,
     tokens,
+    trim_to_name,
 )
 from app.types.signal import Contact, Signal
 
@@ -80,3 +81,32 @@ def test_strip_leading_article_keeps_names_starting_with_article_letters() -> No
     assert strip_leading_article("Ana Lima") == "Ana Lima"
     assert strip_leading_article("Otávio") == "Otávio"
     assert strip_leading_article("O") == "O"
+
+
+def test_trim_to_name_drops_surrounding_context() -> None:
+    assert trim_to_name(surface="novo diretor, Luiz Barreto", name="Luiz Barreto") == "Luiz Barreto"
+    assert trim_to_name(surface="Fernanda da Rodobras", name="Fernanda Lima") == "Fernanda"
+    assert trim_to_name(surface="Translog — status semanal", name="Translog") == "Translog"
+    assert trim_to_name(surface="Lucas,", name="Lucas Andrade") == "Lucas"
+
+
+def test_trim_to_name_rejects_phrases_without_the_name() -> None:
+    assert trim_to_name(surface="volto com isso até sexta", name="Rafael Teixeira") is None
+    assert trim_to_name(surface="deixa eu anotar aqui", name="Ana") is None
+
+
+def test_trim_to_name_keeps_nicknames_and_transcription_variants() -> None:
+    assert trim_to_name(surface="Mari", name="Marina Couto") == "Mari"
+    assert trim_to_name(surface="vector", name="Vetor Capital") == "vector"
+    assert trim_to_name(surface="luís", name="Luiz Barreto") == "luís"
+    assert trim_to_name(surface="trans log", name="Translog") == "trans log"
+    assert trim_to_name(surface="cargo fai", name="Cargofy") == "cargo fai"
+    assert trim_to_name(surface="expresso nor deste", name="Expresso Nordeste") == (
+        "expresso nor deste"
+    )
+
+
+def test_trim_to_name_ignores_isolated_single_letters() -> None:
+    surface = "gente quer abrir o méxico a meta do ano é dobrar a"
+    assert trim_to_name(surface=surface, name="Ana Ribeiro a16z") is None
+    assert trim_to_name(surface="Carlos M.", name="Carlos Menezes") == "Carlos M"

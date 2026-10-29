@@ -157,3 +157,11 @@ def test_ambiguous_observation_with_email_creates_entity() -> None:
 
 def test_ambiguous_observation_without_email_goes_to_review() -> None:
     assert not creates_on_ambiguity(observation=person(name="Rafael Teixeira"))
+
+
+def test_choose_name_keeps_name_against_longer_misspelling() -> None:
+    assert choose_name(current="Translog", incoming="Translogue") == "Translog"
+
+
+def test_choose_name_upgrades_nickname_when_surname_arrives() -> None:
+    assert choose_name(current="Rafa", incoming="Rafael Teixeira") == "Rafael Teixeira"
