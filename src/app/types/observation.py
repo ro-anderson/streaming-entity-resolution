@@ -11,11 +11,21 @@ class ExtractedEntity(BaseModel):
     domain: str | None
     role: str | None
     description: str
+    changed: bool
     evidence: str
+
+
+class ParticipantNote(BaseModel):
+    name: str
+    org_name: str | None
+    role: str | None
+    description: str
+    changed: bool
 
 
 class ExtractionResult(BaseModel):
     entities: list[ExtractedEntity]
+    participants: list[ParticipantNote]
 
 
 class Observation(BaseModel):
@@ -27,4 +37,5 @@ class Observation(BaseModel):
     org_name: str | None = None
     role: str | None = None
     description: str = ""
+    changed: bool = False
     evidence: str = ""
