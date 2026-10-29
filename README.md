@@ -1,34 +1,114 @@
 # streaming-entity-resolution
 
-Processes conversation signals (Slack messages and meeting transcripts) one at a time, in
-order, as if they were arriving live, and keeps a repository of the **people** and
-**organizations** they talk about: who speaks, who attends and who is mentioned. "Jo",
-"Joana P." and `joana@example.com` should end up as one entity; two different people must
-never be merged.
+Reads a company's conversations (Slack messages and meeting transcripts) **one signal at a
+time, in order, as if they were arriving live**, and keeps a single repository of the
+**people** and **organizations** they talk about: who speaks, who attends and who is
+mentioned.
+
+"Jo", "Joana P." and `joana@example.com` should end up as one entity. Two different people
+must never be merged: when the pipeline cannot tell who a mention refers to, it sends it to
+review instead of guessing.
 
 The sample data in [`data/`](data) belongs to a fictional company, Caravela
-([`data/tenant.json`](data/tenant.json)), with 57 signals in
-[`data/signals.jsonl`](data/signals.jsonl).
+([`tenant.json`](data/tenant.json)), with 57 signals in
+[`signals.jsonl`](data/signals.jsonl). It includes the hard cases: nicknames, misheard
+names in transcripts, unnamed speakers, and three pairs of different people sharing a first
+name.
+
+## What you need
+
+| Tool | Used for |
+| --- | --- |
+| [Docker](https://docs.docker.com/get-docker/) with Compose | Elasticsearch, the entity store |
+| [uv](https://docs.astral.sh/uv/) | Python 3.12 and its dependencies |
+| An OpenAI API key | entity extraction and match decisions |
+| Node 22 and [pnpm](https://pnpm.io/) | the UI only |
 
 ## Quick start
 
-Requirements: Docker, [uv](https://docs.astral.sh/uv/), Node 22 with pnpm (for the UI) and an
-OpenAI API key.
-
 ```sh
-cp .env.example .env      # fill OPENAI_API_KEY
-make up                   # Elasticsearch on :9200
-make install
-make run                  # writes out/entities.json and out/needs_review.json
-make check                # validates the critical invariants of the output
+cp .env.example .env      # set OPENAI_API_KEY
+make up                   # start Elasticsearch on :9200
+make install              # install Python dependencies
+make run                  # process the signals, write out/
+make check                # validate the critical invariants of the output
 ```
 
-`make help` lists every target. LLM responses are cached in `.cache/llm/`, so a second
-`make run` is fast, free and reproducible; `make run-no-cache` ignores the cache.
+Then, to explore the run in the browser:
+
+```sh
+make api                  # terminal 1: read-only API on :8000
+make ui                   # terminal 2: http://localhost:5173
+```
+
+LLM responses are cached in `.cache/llm/`: a second `make run` is fast, free and identical.
+`make run-no-cache` ignores the cache. `make help` lists every target. Tests are described
+in [Tests and CI](#tests-and-ci).
+
+## Output
+
+| File | Content |
+| --- | --- |
+| `out/entities.json` | the repository after the last signal |
+| `out/needs_review.json` | mentions that could not be attributed, with `signal_id`, `surface` and `reason` |
+| `out/trace.jsonl` | one event per resolved observation: candidates, guards, LLM decision, outcome, entity before and after |
+
+An entity from the sample run (lists shortened):
+
+```json
+{
+  "id": "e_005",
+  "kind": "PERSON",
+  "name": "Luiz Barreto",
+  "aliases": [
+    "luís",
+    "Luiz"
+  ],
+  "emails": [
+    "luiz.barreto@translog.com.br"
+  ],
+  "description": "Luiz Barreto — Diretor na Translog envolvido na expansão; agora confirmado como o contato que enviou o contrato assinado para as 3 filiais novas.",
+  "mentions": [
+    {
+      "signal_id": "s_001",
+      "surface": "Luiz Barreto"
+    },
+    {
+      "signal_id": "s_021",
+      "surface": "Luiz Barreto"
+    },
+    {
+      "signal_id": "s_021",
+      "surface": "luís"
+    },
+    {
+      "signal_id": "...",
+      "surface": "..."
+    }
+  ],
+  "revisions": [
+    {
+      "signal_id": "s_001",
+      "name": "Luiz Barreto",
+      "description": "Novo diretor na Translog — agora é quem assina contratos (decisor)"
+    },
+    {
+      "signal_id": "...",
+      "name": "...",
+      "description": "..."
+    }
+  ]
+}
+```
+
+- `mentions`: every place the entity appears, with the surface exactly as written in the
+  signal (text, title, author, participant or speaker).
+- `description`: what the entity is to the company now.
+- `revisions`: one entry per signal that changed the name or the description.
 
 ## Architecture
 
-The production design this code is shaped after:
+The production design the code is shaped after:
 
 ```mermaid
 flowchart LR
@@ -41,7 +121,7 @@ flowchart LR
   L --> OS[(OpenSearch<br/>person / organization)]
 ```
 
-What runs locally today, with no simulated AWS infrastructure:
+What runs locally, with no simulated AWS infrastructure:
 
 ```mermaid
 flowchart LR
@@ -51,161 +131,184 @@ flowchart LR
   C --> R[ResolutionService]
   R --> E[EntityService<br/>create / update]
   E --> ES[(Elasticsearch<br/>person / organization)]
-  R --> RV[(needs_review<br/>in memory)]
+  R --> RV[(review items<br/>in memory)]
+  R --> T[(trace.jsonl)]
+  ES --> O[out/]
+  O --> API[read-only API] --> UI[UI]
 ```
 
 The producer stands in for SNS + SQS FIFO (ordering), the consumer for the queue consumer
-and the CDC-triggered Lambda, and `EntityService` for the create/update endpoints. Each
-piece can be swapped for its cloud counterpart without touching the resolution logic.
+and the CDC-triggered Lambda, and `EntityService` for the create and update endpoints. Each
+piece can be replaced by its cloud counterpart without touching the resolution logic.
 
 ## Pipeline
 
-For each signal, in order:
+What happens to one signal:
 
-1. **Structured observations, no LLM.** The author and participants become one person
-   observation per email. A speaker inherits a participant's email only when the full
-   normalized name is identical. Bots are ignored. Unnamed speakers ("Speaker 3") go to
-   review.
-2. **LLM extraction, one call per signal.** The model reads the free text (message, or
-   meeting title and utterances) with the participants as context and returns the
-   people and organizations mentioned, grouped within the signal, plus a short note for
-   each participant. A surface the model returns is kept only if it occurs in the signal
-   (case and accent insensitive), and the stored surface is the exact original span.
-3. **Organizations first, then people**, so a person can be linked to an organization
-   created moments earlier in the same signal.
-4. **Resolution of each observation:**
-   - Exact match: email for a person, email domain for an organization.
-   - Otherwise lexical search in Elasticsearch (fuzzy `multi_match` on name and aliases,
-     plus an edge n-gram subfield for nicknames), top 5 of the same kind.
-   - Candidates that violate a hard guard are dropped.
-   - The LLM decides `match`, `new` or `ambiguous`, with a confidence and an updated
-     description.
-   - A merge needs `match`, confidence of at least 0.85 and a candidate id that was offered.
-     Everything else uncertain goes to `needs_review` without creating an entity.
-5. After the last signal, the repository is exported.
+```mermaid
+sequenceDiagram
+  autonumber
+  participant P as Producer
+  participant C as Consumer
+  participant B as Observation builder
+  participant X as Extraction (LLM)
+  participant R as Resolution
+  participant ES as Elasticsearch
+  participant D as Decision (LLM)
+  participant E as EntityService
+
+  P->>C: next signal, in order
+  C->>B: author, participants, speakers
+  B-->>C: observations with emails, unnamed speakers to review
+  C->>X: message or transcript, participants as context
+  X-->>C: people and organizations mentioned, surfaces validated and trimmed
+  Note over C,R: organizations first, then people (so a person can get org_id)
+  loop each observation
+    C->>R: resolve
+    R->>ES: exact match by email (person) or domain (organization)
+    alt known
+      R->>E: update
+    else unknown
+      R->>ES: lexical search, top 5 of the same kind
+      R->>R: drop candidates that break a guard (email, organization)
+      alt no candidate left
+        R->>E: create if anchored, else review
+      else candidates
+        R->>D: mention, candidates, signal
+        D-->>R: match / new / ambiguous, confidence, description, name
+        R->>E: update if match >= 0.85, create if new, else review
+      end
+    end
+    E->>ES: save, visible to the next search
+    R->>R: write the trace event
+  end
+```
+
+After the last signal, the repository, the review items and the trace are exported to
+`out/`. The reasons behind each rule are in [docs/decisions.md](docs/decisions.md).
+
+## Code map
+
+```text
+.
+├── data/                  input signals and tenant (never edited)
+├── src/app/
+│   ├── main.py            pipeline entry point: reset, seed, consume every signal, export
+│   ├── check.py           `make check`: homonyms apart, Expresso Norte/Nordeste apart, unique emails
+│   ├── config.py          settings from env and .env (models, threshold, paths, URLs)
+│   ├── api.py             read-only FastAPI app over data/ and out/
+│   ├── openapi_dump.py    writes openapi.json, the contract the UI types are generated from
+│   ├── dependencies.py    FastAPI dependency wiring
+│   ├── errors.py          errors as application/problem+json
+│   ├── producers/         where signals come from
+│   │   ├── signal_producer.py        SignalProducer protocol
+│   │   └── jsonl_signal_producer.py  reads signals.jsonl in order, rejects out-of-order input
+│   ├── consumers/
+│   │   └── signal_consumer.py        one signal: observations, extraction, orgs then people
+│   ├── services/          business rules
+│   │   ├── normalization.py          case/accent folding, tokens, domains, surface span and trimming
+│   │   ├── decision_rules.py         guards, threshold, anchor, name upgrade, canonical org name
+│   │   ├── observation_builder.py    observations from author/participants/speakers; signal rendering
+│   │   ├── extraction_service.py     LLM extraction, surface validation
+│   │   ├── resolution_service.py     exact match, search, guards, LLM decision, trace
+│   │   ├── entity_service.py         create, update and seed (the "endpoints")
+│   │   ├── prompts.py                extraction and decision prompts
+│   │   └── export_service.py         writes entities.json and needs_review.json
+│   ├── repositories/      storage behind protocols
+│   │   ├── entity_repository.py      EntityRepository protocol
+│   │   ├── elastic_entity_repository.py  Elasticsearch implementation and search query
+│   │   ├── index_mappings.py         analyzers (folding, edge n-gram) and field mappings
+│   │   ├── review_repository.py      ReviewRepository protocol
+│   │   ├── memory_review_repository.py  in-memory review items
+│   │   ├── trace_recorder.py         TraceRecorder protocol and JSONL writer
+│   │   └── run_files.py              reads the run output for the API
+│   ├── clients/           external services
+│   │   ├── llm_client.py             LLMClient protocol
+│   │   ├── openai_client.py          structured outputs and embeddings, through the cache
+│   │   ├── disk_cache.py             response cache keyed by sha256
+│   │   └── elastic_client.py         Elasticsearch client from settings
+│   ├── handlers/
+│   │   └── run.py                    GET /api/signals, /api/trace, /api/entities, /api/reviews
+│   └── types/             Pydantic models shared by every layer
+│       ├── signal.py                 Signal, Contact, Utterance, Tenant
+│       ├── entity.py                 Entity, Mention, Revision, SearchHit, EntityExport
+│       ├── observation.py            LLM extraction schema and Observation
+│       ├── decision.py               CandidateDecision, ReviewItem
+│       └── trace.py                  TraceEvent
+├── tests/
+│   ├── unit/              normalization, decision rules, OpenAI client and cache, API
+│   └── integration/       Elasticsearch repository (needs `make up`)
+├── frontend/              React UI (Vite, TanStack Query)
+│   └── src/
+│       ├── api/           one query hook per endpoint, generated types (schema.gen.ts)
+│       ├── logic/         pure, tested logic: repository state at a signal, highlights, event choice
+│       ├── components/    signal list, trace panel, repository panel, replay controls
+│       └── pages/         Replay, Review, Entities, Entity
+├── docs/                  decisions and backlog
+├── compose.yaml           Elasticsearch
+├── Makefile               every command
+└── AGENTS.md              commands and code rules for coding agents
+```
+
+Dependencies point one way: `producers -> consumers -> services -> repositories / clients`,
+with `types` shared by all.
 
 ## API
-
-A read-only API serves the last run to the UI, straight from `data/` and `out/`, so it
-works without Elasticsearch running:
-
-```sh
-make api   # http://localhost:8000/docs
-```
 
 | Route | Returns |
 | --- | --- |
 | `GET /api/signals` | the signals, in order |
-| `GET /api/trace` | one event per resolved observation: candidates, guards, LLM decision, outcome, entity before and after |
+| `GET /api/trace` | the decision trace |
 | `GET /api/entities` | `out/entities.json` |
 | `GET /api/reviews` | `out/needs_review.json` |
 
 A missing run output returns `404` as `application/problem+json` with code `RUN_NOT_FOUND`.
+Interactive docs at `http://127.0.0.1:8000/docs`.
 
 ## UI
 
-A read-only replay of the last run, served by the API above:
+- **Replay:** steps through the signals (0.5x, 1x, 2x), highlights each mention by outcome
+  (matched, created, sent to review) and shows the decision trace: exact match, search
+  candidates with scores, candidates removed by a guard, the LLM decision and the resulting
+  change. The repository panel shows the state right after the selected signal.
+- **Review:** the mentions the pipeline did not attribute, with the reason and the
+  candidates it considered. A report, not a work queue.
+- **Entities:** search, identity, how the description changed, where the entity appears,
+  and a "protected homonym" note when a guard actually kept someone apart from it.
+
+## Tests and CI
+
+| Layer | Framework | What it covers | In CI |
+| --- | --- | --- | --- |
+| Backend unit (56) | [pytest](https://docs.pytest.org/) | normalization and surface trimming (18), decision rules: guards, threshold, anchor, name upgrade, canonical organization name (29), OpenAI client and disk cache with hand-written fakes (7), API routes with FastAPI's `TestClient` (2) | yes |
+| Backend integration (11) | pytest against a real Elasticsearch | the repository: mappings, exact lookups, fuzzy and prefix search, accent folding, kinds kept apart; skipped when Elasticsearch is not running | no |
+| Frontend unit (17) | [Vitest](https://vitest.dev/) | the pure logic: repository state at a signal, highlight segmentation (longest first, no overlap), default trace event | yes |
+| Invariants | `make check` on a real run | homonyms never merged, Expresso Norte and Nordeste apart, no email in two entities | no, needs an OpenAI key |
+| End to end | none yet | a browser test of the UI over a recorded run is in the [backlog](docs/backlog.md) | no |
+
+Unit tests come first where an error is expensive: normalization and the decision rules
+were written test first. They never call the LLM or Elasticsearch.
+
+Static checks: [ruff](https://docs.astral.sh/ruff/) (lint and format) and mypy strict
+(non-blocking for now) on the backend; ESLint with typed rules, Prettier and `tsc` on the
+frontend.
 
 ```sh
-make api   # terminal 1
-make ui    # terminal 2, http://localhost:5173
+make test                                 # backend unit tests
+make lint                                 # ruff, format check, mypy (non-blocking)
+uv run pytest tests/integration           # needs `make up`
+cd frontend && pnpm install && pnpm test  # frontend unit tests
+make run && make check                    # invariants on a real run
 ```
 
-- **Replay:** steps through the signals in order (0.5x, 1x, 2x), highlights each mention by
-  outcome (matched, created, sent to review) and shows the decision trace: exact match,
-  search candidates with scores, candidates removed by a guard, the LLM decision and the
-  resulting change. The repository panel shows the state right after the selected signal,
-  rebuilt in the browser from the trace.
-- **Review:** the mentions the pipeline did not attribute, with the reason and the candidates
-  it considered. It is a report; manual review is in the [backlog](BACKLOG.md).
-- **Entities:** search, identity, how the description changed (revisions), where the entity
-  appears, and a "protected homonym" note when a guard actually kept someone apart from it.
+[GitHub Actions](.github/workflows/ci.yaml) runs on every pull request and push to `main`:
 
-## Output
+- **backend:** `uv sync --frozen`, ruff check, ruff format check, unit tests, and a check
+  that `openapi.json` matches the API (the UI types are generated from it).
+- **frontend:** `pnpm install --frozen-lockfile`, lint, typecheck, unit tests, build.
 
-`out/entities.json`:
+## Further reading
 
-```json
-{
-  "id": "e_004",
-  "kind": "PERSON",
-  "name": "Luiz Barreto",
-  "aliases": [],
-  "emails": ["luiz.barreto@translog.com.br"],
-  "description": "Novo diretor da Translog, quem assina o contrato.",
-  "mentions": [{"signal_id": "s_001", "surface": "Luiz Barreto"}],
-  "revisions": [{"signal_id": "s_001", "name": "Luiz Barreto", "description": "..."}]
-}
-```
-
-- `mentions`: every place the entity appears, with the surface exactly as written in the
-  signal (text, title, author, participant or speaker).
-- `description`: what the entity is to the tenant company now.
-- `revisions`: one entry per signal that changed the name or the description.
-
-`out/trace.jsonl`: the decision trace, one JSON event per resolved observation.
-
-`out/needs_review.json`: the mentions that could not be attributed, with `signal_id`,
-`surface` and `reason`.
-
-## Decisions
-
-- **Splitting is cheap, merging is expensive.** Every uncertain path ends in review, never
-  in a merge or a new entity.
-- **Two hard guards only:** different non-empty emails, and different `org_id`s. The
-  `org_id` guard applies only to the search + LLM path; an exact email match overrides it,
-  so a person who changes companies is updated instead of blocked.
-- **Domain resolves organizations, not people.** For a person, the email domain only sets
-  the organization. When the LLM links a participant's domain to an organization, the
-  domain is stored on it, and the next email from that domain resolves without the LLM.
-- **An ambiguous decision about someone with an email creates a new entity.** The email is
-  a strong identity of its own, and splitting is the cheap error: "Rafael Teixeira", author
-  with an email, no longer goes to review just because a nickname-only "Rafa" exists.
-  Without an email, ambiguous still goes to review.
-- **Aliases drop a leading article** ("O Carlos" is stored as the alias "Carlos"); the
-  mention keeps the exact surface from the signal.
-- **Anchor rule:** a new person needs an email, a name with two or more tokens, an
-  organization or a role. A bare first name with nothing else goes to review.
-- **Name upgrade:** the name changes only when each token of the current name is a prefix
-  of a token of the new one ("Jo" to "Joana Prates", "Carlos M." to "Carlos Menezes").
-  Otherwise the new form becomes an alias ("Bia" and "Beatriz" stay apart as name and
-  alias).
-- **Revisions:** creation always writes one; an update writes one only when the name or
-  the description changed. The seeded tenant organization has no revision, since it does
-  not come from a signal.
-- **Match threshold of 0.85, applied to the LLM confidence, not to the search score.**
-  The Elasticsearch BM25 score is not normalized across queries: in the first run the top
-  candidate scored between 4.2 and 40.2 when the decision was a match, and between 2.7 and
-  29.1 when it was ambiguous, so no cut on it separates the two. It is only used to rank
-  candidates, and the chosen one was the first in 83 of 86 matches. The LLM confidence is
-  not continuous either: the model answered in a few round values (0.95 in 31 matches, 0.9
-  in 42, 0.85 in 3, 0.8 in 4, 0.7 to 0.75 in 3), so it behaves like categories. 0.85 cuts
-  between the "near certain" and "probably" groups. The three matches accepted exactly at
-  0.85 were correct; of the seven rejected below it, most look right on inspection, but
-  that is a handful of unlabeled cases and wrongly merging two people costs more than one
-  more review item, so the threshold stays conservative. How to recalibrate it on labeled
-  boundary cases is described in the [backlog](BACKLOG.md#threshold-calibration-on-real-boundary-cases).
-- **Lexical search first.** Freshly created entities have one-line descriptions, so
-  embeddings would add little at first. kNN comes next; `more_like_this` was discarded
-  because names are too short for term statistics.
-- **Writes use `refresh=true`,** so a document saved earlier in the same signal is visible
-  to the next search (an organization created in a signal must be found when a person of
-  that signal is resolved). `wait_for` gives the same guarantee but blocks each write until
-  the next scheduled refresh (1 s by default); forcing the refresh costs nothing at this
-  volume. In production, with many writes, forcing a refresh per document would be too
-  expensive: refresh once per batch, or keep an in-memory cache of the entities touched in
-  the current signal and search it alongside the index.
-- **Models:** extraction and decision models are configured separately
-  (`EXTRACTION_MODEL`, `DECISION_MODEL`, default `gpt-5-mini`) with low reasoning effort.
-  The GPT-5 family does not take `temperature`, so reruns are made deterministic by the
-  disk cache, keyed by model, reasoning effort, prompts and schema.
-- **Elasticsearch is the source of truth** and is recreated on every run. Review items are
-  kept in memory because nothing reads them during processing.
-
-## Next steps
-
-See [BACKLOG.md](BACKLOG.md).
-
-## Development
-
-See [AGENTS.md](AGENTS.md) for commands, layers and code rules.
+- [docs/decisions.md](docs/decisions.md): why each rule is the way it is.
+- [docs/backlog.md](docs/backlog.md): what was left out, and why.
+- [AGENTS.md](AGENTS.md): commands, layers and code rules for contributors.

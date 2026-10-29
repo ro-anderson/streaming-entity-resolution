@@ -43,6 +43,9 @@ nenhum deles; "ambiguous" se nao da para saber.
 - description: a descricao da entidade apos este sinal, em uma ou duas linhas, dizendo o que \
 ela e para a {tenant_name} AGORA. Em "match", parta da descricao do candidato e so mude se o \
 sinal trouxer algo novo. Em "new", descreva a entidade nova.
+- name: so para ORGANIZACAO em "match": a grafia correta do nome da empresa, escolhida entre o \
+nome e os aliases do candidato e as surfaces da mencao (transcricoes erram nomes, ex.: \
+"cargo fai" para "Cargofy"). Copie exatamente uma dessas formas. Senao, null.
 
 Regras:
 - Juntar duas pessoas diferentes e o pior erro possivel. Na duvida, "ambiguous".

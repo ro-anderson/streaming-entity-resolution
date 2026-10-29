@@ -31,6 +31,17 @@
             "title": "Description",
             "type": "string"
           },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
           "reason": {
             "title": "Reason",
             "type": "string"
@@ -41,7 +52,8 @@
           "candidate_id",
           "confidence",
           "reason",
-          "description"
+          "description",
+          "name"
         ],
         "title": "CandidateDecision",
         "type": "object"
